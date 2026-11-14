@@ -1,0 +1,130 @@
+[
+  [
+    "query",
+    "List 12 Japanese passive component makers. Return company_name, headquarters_country and main_product_category."
+  ],
+  [
+    "query",
+    "List 12 Taiwanese PCB fabricators. Return company_name, headquarters_country and main_product_category."
+  ],
+  [
+    "query",
+    "List 12 German electronic sensor makers. Return company_name, headquarters_country and main_product_category."
+  ],
+  [
+    "query",
+    "List 12 French photonics manufacturers. Return company_name, headquarters_country and main_product_category."
+  ],
+  [
+    "query",
+    "List 12 US analog chip makers. Return company_name, headquarters_country and main_product_category."
+  ],
+  [
+    "query",
+    "List 12 South Korean display materials makers. Return company_name, headquarters_country and main_product_category."
+  ],
+  [
+    "query",
+    "List 12 Japanese battery component makers. Return company_name, headquarters_country and main_product_category."
+  ],
+  [
+    "query",
+    "List 12 Thai electronics manufacturers. Return company_name, headquarters_country and main_product_category."
+  ],
+  [
+    "query",
+    "List 12 Canadian electronics contract manufacturers. Return company_name, headquarters_country and main_product_category."
+  ],
+  [
+    "query",
+    "List 12 Israeli semiconductor companies. Return company_name, headquarters_country and main_product_category."
+  ],
+  [
+    "query",
+    "List 12 British semiconductor companies. Return company_name, headquarters_country and main_product_category."
+  ],
+  [
+    "query",
+    "List 12 Italian electronic component makers. Return company_name, headquarters_country and main_product_category."
+  ],
+  [
+    "query",
+    "List 12 Chinese PCB fabricators. Return company_name, headquarters_country and main_product_category."
+  ],
+  [
+    "query",
+    "List 12 Swiss electronics manufacturers. Return company_name, headquarters_country and main_product_category."
+  ],
+  [
+    "query",
+    "List 12 US connector manufacturers. Return company_name, headquarters_country and main_product_category."
+  ],
+  [
+    "query",
+    "List 12 Taiwanese chip packaging companies. Return company_name, headquarters_country and main_product_category."
+  ],
+  [
+    "search",
+    "Where are Murata manufacturing sites in Japan?"
+  ],
+  [
+    "search",
+    "Which factories does GlobalFoundries operate?"
+  ],
+  [
+    "search",
+    "Where does Amkor operate assembly and test facilities?"
+  ],
+  [
+    "search",
+    "Where are ASE semiconductor packaging sites?"
+  ],
+  [
+    "search",
+    "Where are Infineon wafer fabrication locations?"
+  ],
+  [
+    "search",
+    "Which ports are on ONE's PS7 rotation?"
+  ],
+  [
+    "search",
+    "Where are Texas Instruments wafer fabs?"
+  ],
+  [
+    "search",
+    "Which companies supply silicon wafers to Intel?"
+  ],
+  [
+    "search",
+    "Which rail terminals connect the Chongqing to Duisburg electronics freight service?"
+  ],
+  [
+    "search",
+    "Which assembly and test facilities does Amkor operate in Portugal and Vietnam?"
+  ],
+  [
+    "search",
+    "Where are GlobalWafers silicon wafer plants in Europe?"
+  ],
+  [
+    "search",
+    "Which manufacturing facilities does NXP operate in the United States?"
+  ],
+  [
+    "search",
+    "Which ports and terminals are on Ocean Network Express Vietnam Singapore feeder services?"
+  ],
+  [
+    "search",
+    "Where are STMicroelectronics front-end wafer manufacturing sites in Europe?"
+  ],
+  [
+    "search",
+    "Which assembly and test facilities does Texas Instruments operate in Southeast Asia?"
+  ],
+  [
+    "search",
+    "Which semiconductor manufacturing plants does onsemi operate in Europe?"
+  ]
+]

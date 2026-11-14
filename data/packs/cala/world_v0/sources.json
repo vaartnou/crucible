@@ -1,0 +1,90 @@
+[
+  {
+    "id": "src_cala_000001",
+    "provider": "public_disclosure",
+    "published_at": null,
+    "publisher": "Apple",
+    "query_id": "q001",
+    "retrieved_at": "2026-11-14",
+    "text_sha256": "d4f7650fa390f7f71381fc22fc15fd970fae7397f53f7cc9d36fa6f9828f5eef",
+    "title": "Supplier List, February 2018",
+    "url": "https://www.apple.com/euro/supplier-responsibility/h/generic/pdf/Apple-Supplier-List.pdf"
+  },
+  {
+    "id": "src_cala_000002",
+    "provider": "public_disclosure",
+    "published_at": null,
+    "publisher": "TSMC",
+    "query_id": "q002",
+    "retrieved_at": "2026-11-14",
+    "text_sha256": "88670871ba0009998815b85a4c4e06ea707de4db6c681dc1eefa51a7549352e8",
+    "title": "Supply Chain Management Forum supplier awards, 2023",
+    "url": "https://pr.tsmc.com/english/news/3086"
+  },
+  {
+    "id": "src_cala_000003",
+    "provider": "public_disclosure",
+    "published_at": null,
+    "publisher": "TSMC",
+    "query_id": "q003",
+    "retrieved_at": "2026-11-14",
+    "text_sha256": "87c593d94c25d5379a866d5f6819273352a8a408cc527748d724144abe877687",
+    "title": "Supply Chain Management Forum supplier awards, 2024",
+    "url": "https://pr.tsmc.com/japanese/news/3192"
+  },
+  {
+    "id": "src_cala_000004",
+    "provider": "public_disclosure",
+    "published_at": null,
+    "publisher": "TSMC",
+    "query_id": "q004",
+    "retrieved_at": "2026-11-14",
+    "text_sha256": "c465ab451b70c53218ea64a0811ccc8016c5f07085e8e99177afa061acfb3cfb",
+    "title": "Supply Chain Management Forum supplier awards, 2025",
+    "url": "https://pr.tsmc.com/english/news/3274"
+  },
+  {
+    "id": "src_cala_000005",
+    "provider": "public_disclosure",
+    "published_at": null,
+    "publisher": "Ocean Network Express",
+    "query_id": "q005",
+    "retrieved_at": "2026-11-14",
+    "text_sha256": "90a9823b1445526157c9d5850afdd2c59e52079d9049ac1e213ce83815716295",
+    "title": "Hai Phong – United States/Canada schedule, February 2024",
+    "url": "https://vn.one-line.com/sites/vietnam/files/2024-02/HAIPHONG%20-%20US%2CCA%20%2820240222%29.pdf"
+  },
+  {
+    "id": "src_cala_000006",
+    "provider": "public_disclosure",
+    "published_at": null,
+    "publisher": "AMD",
+    "query_id": "q006",
+    "retrieved_at": "2026-11-14",
+    "text_sha256": "20e96c803559ac4201c6813d02825cb358834c9143ce37fc08700c9da2a8aead",
+    "title": "Form 10-K, fiscal 2024, Manufacturing Arrangements",
+    "url": "https://www.sec.gov/Archives/edgar/data/2488/000000248825000012/amd-20241228.htm"
+  },
+  {
+    "id": "src_cala_000007",
+    "provider": "public_disclosure",
+    "published_at": "2024-08-08",
+    "publisher": "Infineon Technologies",
+    "query_id": "q007",
+    "retrieved_at": "2026-11-14",
+    "text_sha256": "b1e2f5acaf6bef2a3f84498499b8eacfee014f9f5607c0113ac968799a4ce412",
+    "title": "Opening of the Kulim power semiconductor fab",
+    "url": "https://www.infineon.com/press-release/2024/infxx202408-133"
+  },
+  {
+    "id": "src_cala_000008",
+    "provider": "public_disclosure",
+    "published_at": "2019-04-03",
+    "publisher": "Cargolux",
+    "query_id": "q008",
+    "retrieved_at": "2026-11-14",
+    "text_sha256": "cb0b8ccd947f7c5e227d2c1e4b0bbb9cb0ee9080126ae57af992b855f690295e",
+    "title": "Cargolux boosts Budapest frequencies",
+    "url": "https://www.cargolux.com/media/cwlbn542/20190403_bud_-en.pdf"
+  }
+]

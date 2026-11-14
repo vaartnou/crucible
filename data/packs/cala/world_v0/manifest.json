@@ -1,0 +1,91 @@
+{
+  "built_at": "2026-11-14",
+  "built_by": "Crucible",
+  "contract_version": "0.1",
+  "counts": {
+    "sources": 8,
+    "world_facts": 841
+  },
+  "files": {
+    "sources.json": "e240f8a2d9b374fcfa965252263c4daf6b49abae40686f07c3330183927f53ca",
+    "world_facts.json": "36d42ebac6434b51402ef85b1e301640c8b6e4aec130a68384efdc0d1042a9c8"
+  },
+  "fragment": "cala/world_v0",
+  "licence_note": "Independent factual abstractions from cited disclosures. Source documents retain their original rights. Cala API output is held separately. https://www.cala.ai/terms",
+  "pack_hash": "c7c26757a917bd4f851ad117bba172c5404714045f88ae147331edd5269e1326",
+  "provider": "public_disclosure",
+  "query_log": [
+    {
+      "endpoint": "public document excerpt",
+      "id": "q001",
+      "n_results": 1,
+      "params": {
+        "url": "https://www.apple.com/euro/supplier-responsibility/h/generic/pdf/Apple-Supplier-List.pdf"
+      },
+      "retrieved_at": "2026-11-14"
+    },
+    {
+      "endpoint": "public document excerpt",
+      "id": "q002",
+      "n_results": 1,
+      "params": {
+        "url": "https://pr.tsmc.com/english/news/3086"
+      },
+      "retrieved_at": "2026-11-14"
+    },
+    {
+      "endpoint": "public document excerpt",
+      "id": "q003",
+      "n_results": 1,
+      "params": {
+        "url": "https://pr.tsmc.com/japanese/news/3192"
+      },
+      "retrieved_at": "2026-11-14"
+    },
+    {
+      "endpoint": "public document excerpt",
+      "id": "q004",
+      "n_results": 1,
+      "params": {
+        "url": "https://pr.tsmc.com/english/news/3274"
+      },
+      "retrieved_at": "2026-11-14"
+    },
+    {
+      "endpoint": "public document excerpt",
+      "id": "q005",
+      "n_results": 1,
+      "params": {
+        "url": "https://vn.one-line.com/sites/vietnam/files/2024-02/HAIPHONG%20-%20US%2CCA%20%2820240222%29.pdf"
+      },
+      "retrieved_at": "2026-11-14"
+    },
+    {
+      "endpoint": "public document excerpt",
+      "id": "q006",
+      "n_results": 1,
+      "params": {
+        "url": "https://www.sec.gov/Archives/edgar/data/2488/000000248825000012/amd-20241228.htm"
+      },
+      "retrieved_at": "2026-11-14"
+    },
+    {
+      "endpoint": "public document excerpt",
+      "id": "q007",
+      "n_results": 1,
+      "params": {
+        "url": "https://www.infineon.com/press-release/2024/infxx202408-133"
+      },
+      "retrieved_at": "2026-11-14"
+    },
+    {
+      "endpoint": "public document excerpt",
+      "id": "q008",
+      "n_results": 1,
+      "params": {
+        "url": "https://www.cargolux.com/media/cwlbn542/20190403_bud_-en.pdf"
+      },
+      "retrieved_at": "2026-11-14"
+    }
+  ]
+}
