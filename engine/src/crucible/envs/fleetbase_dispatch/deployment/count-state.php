@@ -8,6 +8,8 @@ $counts = [];
 foreach ($tables as $table) {
     $counts[$table] = Illuminate\Support\Facades\DB::table($table)->whereNull('deleted_at')->count();
 }
+// v2: cancelled orders are still active rows until the adapter deletes them.
+$counts['orders_canceled'] = Illuminate\Support\Facades\DB::table('orders')->whereNull('deleted_at')->where('status', 'canceled')->count();
 $counts['users'] = Illuminate\Support\Facades\DB::table('users')->whereNull('deleted_at')->count();
 echo json_encode($counts) . "\n";
 $clean = $counts['users'] === 1;

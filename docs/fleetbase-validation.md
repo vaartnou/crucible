@@ -137,6 +137,63 @@ Findings:
   greedy − no_replan +0.055). More lead time per order mostly helps the
   online policies, which learn of an order only at its release.
 
+## Step 5: native v2 port (offline-verified)
+
+`FleetbaseAdapter` now implements the v2 operations and mirrors world disruptions into
+native records; endpoints and assumptions are in
+[fleetbase-api-audit.md](fleetbase-api-audit.md), "v2 operations (unverified against
+live stack)". Offline, `tests/test_parity.py` replays the seed-0 reference trace
+(cancellations, reroutes, unassigns, a note, customer cancellations, dropoff changes,
+breakdowns, repairs and shift ends) through the native adapter over an HTTP fake of
+that contract, with and without injected post-commit HTTP 500s, and gets the same
+events, economics and rejected-call count as memory, with zero records after cleanup.
+This proves the adapter logic and read-back discipline against the documented
+contract only. It does not prove the pinned Fleetbase implements that contract.
+
+### Track C (needs Docker; not done)
+
+Each item needs a fresh output directory and an isolated Compose project.
+
+1. Native contract probe and clean-stack episodes, reset-and-replay, cleanup counts
+   and Harbor oracle (the smoke runner does all of these, probe first):
+
+   ```sh
+   cd engine
+   uv run crucible export harbor --task fleetbase_dispatch@1 --seeds 0 \
+     --out ../harbor/fleetbase-v2-dev
+   uv run python scripts/fleetbase_smoke.py \
+     --task-dir ../harbor/fleetbase-v2-dev/fleetbase_dispatch-1-seed-0 \
+     --out ../runs/fleetbase-v2-validation-UNIQUE --harbor
+   ```
+
+   Gates: `native-contract-proof` and every `*-cleanup` step exit 0; do-nothing scores
+   0 and the others score > 0; `semantic_replay` equal; Harbor oracle reward > 0 with
+   no `env_error` or `cleanup_errors`.
+2. Live parity against an exclusive stack (for example the smoke stack before
+   teardown, or `docker compose up` of the exported task with a published port):
+
+   ```sh
+   cd engine
+   FLEETBASE_URL=http://127.0.0.1:PORT FLEETBASE_TOKEN=... \
+   FLEETBASE_DEPLOYMENT_ID=... FLEETBASE_EXCLUSIVE=1 \
+     uv run pytest src/crucible/envs/fleetbase_dispatch/tests/test_parity.py \
+     -k live -v
+   ```
+
+   then `php /opt/crucible/count-state.php` in the app container must exit 0.
+3. New experiment identity with 3 fresh salted worlds (requires 1 to pass):
+
+   ```sh
+   cd engine
+   uv run python scripts/fleetbase_pilot.py freeze \
+     --out ../runs/fleetbase-pilot-v2 --reference-verified
+   uv run python scripts/fleetbase_pilot.py run --out ../runs/fleetbase-pilot-v2 \
+     --operators reference,greedy,do_nothing,stop_early
+   ```
+
+   The freeze records `fleetbase-native-v2-pilot-<candidate>`; `run` refuses v1
+   experiments. Record a new `fleetbase-native-proof.json` (the count helper changed).
+
 ## Current acceptance status
 
 The pure simulator/policy checks pass, including physical motion, economic
@@ -144,5 +201,6 @@ accounting, late/unserved demand, capacity, irreversible pickup, reassignment
 before pickup, duplicate protection and semantic replay. The reusable runtime
 passes real HTTP subprocess tests for preparation, leases, artifacts and cleanup.
 Local native baselines, independent-reset semantic replay, and clean Harbor
-acceptance all pass.
+acceptance passed for v1 (archived). For v2 the native port passes offline parity
+only; every live item in "Track C" above is open.
 No model-performance conclusion is available from these checks.

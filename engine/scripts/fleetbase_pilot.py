@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """Freeze and run a sequential three-world Fleetbase pilot through Harbor 0.26.0.
 
+Ported to the v2 tool set (plan step 5): the script is tool-agnostic, and a freeze
+creates the new experiment identity ``fleetbase-native-v2-pilot-<candidate>`` with
+three fresh salted worlds. v1 pilot records are never resumed by it.
+
 The freeze stores private salts/credentials under the supplied ignored output
 folder. Run only after clean local/Harbor reference validation. Failed attempts
 are append-only; rerunning resumes completed valid trials and retries failures
@@ -67,7 +71,7 @@ def freeze(root: Path, reference_verified: bool) -> None:
     bundle = task.deployment_bundle()
     assert bundle is not None
     spec = PilotSpec(
-        experiment_id="fleetbase-native-v1-pilot-" + candidate[:12],
+        experiment_id="fleetbase-native-v2-pilot-" + candidate[:12],
         candidate_sha256=candidate,
         world_ids=world_ids,
         reference_verified=True,
@@ -85,6 +89,7 @@ def freeze(root: Path, reference_verified: bool) -> None:
             "harbor": "0.26.0",
             "task": task.spec.ref,
             "max_steps": task.spec.max_steps,
+            "tools": sorted(tool.name for tool in task.tools()),
             "instruction": task.instruction(),
             "continuation": "committed-work-to-horizon",
             "analysis_unit": "world mean across three agent repeats",
@@ -111,6 +116,8 @@ def freeze(root: Path, reference_verified: bool) -> None:
 
 def run(root: Path, operators: list[str], credential_file: Path | None) -> None:
     spec = PilotSpec.model_validate_json((root / "spec.json").read_text())
+    if not spec.experiment_id.startswith("fleetbase-native-v2-pilot-"):
+        raise RuntimeError("v1 pilot experiments are archived; freeze a new v2 experiment")
     if source_hash() != spec.candidate_sha256:
         raise RuntimeError(
             "Candidate source changed after freeze; create a new experiment with new worlds"

@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """Prepare/run a scripted native replay outside the frozen Fleetbase pilot.
 
+v1-ONLY: the semantic observation comparison and replayed prefixes assume the v1 tool
+set and observation shape of the archived v1 pilot. It refuses to run until it is
+ported to the v2 tools (``fleetbase_dispatch@1`` after plan step 5).
+
 No model is called. Preparation copies a frozen task and replaces only its oracle
 solution with a public MCP client: replay the original public prefix, verify the
 semantic observations, then use the reference for the remaining 128-call budget.
@@ -383,7 +387,14 @@ def run(args):
     )
 
 
+V1_ONLY = (
+    "fleetbase_counterfactual.py is v1-only: it replays v1 tool prefixes and compares the "
+    "v1 observation shape. Port it to the v2 tools before use."
+)
+
+
 def main():
+    raise SystemExit(V1_ONLY)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("prepare", "run"))
     parser.add_argument("--pilot", type=Path, default=Path("../runs/fleetbase-pilot-v1"))

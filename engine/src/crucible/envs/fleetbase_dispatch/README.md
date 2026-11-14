@@ -13,7 +13,8 @@ status (for example a native `completed`) never earns value by itself.
 This is the v2 world ("make it hard" plan, steps 2–4): the defaults below are tuned and
 frozen with the policy sweep (see [validation](../../../../../docs/fleetbase-validation.md),
 "v2 heuristic sweep"), and the reward is normalised by a hindsight planner. Plan step 5
-ports the new operations to native Fleetbase.
+ported the new operations to native Fleetbase; that port is verified offline only (see
+"Deployment" and "Track C" below).
 
 ## Rules
 
@@ -134,10 +135,16 @@ on the in-memory backend and checks the gates.
 
 ## Deployment
 
-Until plan step 5, `FleetbaseAdapter` raises `NotImplementedError` for the v2
-operations (cancel, update, unassign, routes and world-driven record changes), so v2
-episodes need `FLEETBASE_BACKEND=memory`. The deployment below describes the native
-stack that step 5 targets.
+`FleetbaseAdapter` implements every v2 operation (plan step 5): cancel through
+`DELETE /v1/orders/:id/cancel`, note/priority and route ranks in order `meta`,
+unassign by clearing `driver`/`vehicle`, several orders per driver, and world changes
+mirrored into native records (customer cancellation cancels the order, a dropoff
+change moves the dropoff place, a breakdown unassigns, and breakdown/repair/shift end
+set the vehicle status). Native Fleetbase has no stop sequencing and no un-dispatch,
+so route ranks and an un-dispatch marker live in `meta`. The endpoints beyond the v1
+audit are **unverified against a live stack**: see the audit's "v2 operations"
+section for each assumption. `deployment/native-proof.php` probes them, and the smoke
+runner below runs it first.
 
 See [the native audit](../../../../../docs/fleetbase-api-audit.md) for immutable
 image/source pins and audited endpoints. The private bundle starts MySQL, Redis,
@@ -188,7 +195,30 @@ the in-memory backend without the HTTP runtime. `fleetbase_sim@1` has the same
 tools, instruction and reward, always uses memory, has no deployment bundle, and
 runs the generic task checks. `tests/test_parity.py` replays one recorded tool
 trace on every backend and requires equal events, economics and rejection counts.
-Its native halves are skipped until step 5.
+The trace includes cancellations, reroutes, unassigns, notes and every world
+disruption. Against the offline HTTP fake of the native contract it also runs with
+injected post-commit HTTP 500s and requires cleanup to leave zero records, and an
+adapter-level script compares `committed()` and rejections step by step with memory.
+The live half runs only with `FLEETBASE_URL`, `FLEETBASE_TOKEN`,
+`FLEETBASE_DEPLOYMENT_ID` and `FLEETBASE_EXCLUSIVE=1`.
+
+### Track C: what still needs a live stack
+
+The fake proves the adapter logic against the documented contract, not that the pinned
+Fleetbase behaves as documented. Track C must show, on a real stack:
+
+1. The native contract probe passes (`native-proof.php`, every v2 assumption), followed
+   by a clean `count-state.php`.
+2. Live parity: `test_live_native_matches_memory` passes against an exclusive stack.
+3. A clean-stack episode (reference, greedy, do-nothing, stop-early) with clean
+   cleanup counts after each, and reset-and-replay with equal events, economics and
+   world.
+4. The Harbor oracle on an exported `fleetbase_dispatch@1` task: positive reward, no
+   env error, no cleanup errors.
+5. A new experiment identity (`fleetbase-native-v2-pilot-<candidate>`, from
+   `scripts/fleetbase_pilot.py freeze`) with 3 fresh salted worlds.
+
+`scripts/fleetbase_counterfactual.py` is v1-only and refuses to run.
 
 ## Validation and comparison
 
@@ -197,16 +227,17 @@ read-back after ambiguous mutations, duplicates and frozen evidence.
 `fleetbase_dispatch@1` opts out of the generic offline tests because they cannot
 provision the application; `fleetbase_sim@1` runs them on the same logic. See [validation](../../../../../docs/fleetbase-validation.md).
 
-The pilot tooling below (`scripts/fleetbase_pilot.py`,
-`scripts/fleetbase_counterfactual.py`) was written for the v1 world and v1 tools and
-does not run against v2 yet. After clean reference validation, freeze a candidate
-and three fresh paired worlds. Preserve private exports and run records in ignored folders:
+`scripts/fleetbase_pilot.py` is tool-agnostic and ported to v2: a freeze creates the
+experiment identity `fleetbase-native-v2-pilot-<candidate>` and `run` refuses v1
+experiments. `scripts/fleetbase_counterfactual.py` is v1-only and exits with a message.
+After clean reference validation (Track C), freeze a candidate and three fresh salted
+worlds. Preserve private exports and run records in ignored folders:
 
 ```bash
 uv run --directory engine python scripts/fleetbase_pilot.py freeze \
-  --out ../runs/fleetbase-pilot-v1 --reference-verified
+  --out ../runs/fleetbase-pilot-v2 --reference-verified
 uv run --directory engine python scripts/fleetbase_pilot.py run \
-  --out ../runs/fleetbase-pilot-v1 --credential-file ../.env
+  --out ../runs/fleetbase-pilot-v2 --credential-file ../.env
 ```
 
 The runner uses Harbor 0.26.0, OpenCode 1.19.5, and

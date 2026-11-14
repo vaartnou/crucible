@@ -106,6 +106,11 @@ Add cancel, update, unassign, multiple orders per driver and the stop list in or
 meta to `FleetbaseAdapter`. Mirror disruptions into native records. Live parity, the
 clean-stack episode, reset-and-replay, cleanup counts and the Harbor oracle are Track C.
 
+Status: code done and offline-verified (fake-contract parity with injected 500s, zero
+records after cleanup). Endpoint assumptions are listed in
+`docs/fleetbase-api-audit.md`, "v2 operations (unverified against live stack)"; the
+Track C commands are in `docs/fleetbase-validation.md`.
+
 ## Tracks needing infrastructure (not done by the coding steps)
 - **Track B**: run the agent on `fleetbase_sim@1` with `crucible export harbor` and `harbor run -a opencode`
   using Gemini Flash plus one stronger model. Log the results in `runs/fleetbase-sweep-log.md`.

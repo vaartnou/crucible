@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """Run a clean local Fleetbase proof and optionally a separate Harbor oracle.
 
+Steps: the native contract probe (v1 workflow and the v2 endpoint assumptions), local
+reference/greedy/do-nothing/stop-early episodes on the v2 tools with cleanup counts
+after each, a fresh-reset replay of the reference, and optionally the Harbor oracle.
+
 Uses only the services/files inside an already generated Harbor task. All output,
 including failure logs, stays private in --out. Requires Docker Compose and the
 project's pinned Harbor 0.26.0. Does not launch Docker from inside an episode.
@@ -139,6 +143,16 @@ def main() -> None:
         run("compose-version", ["docker", "compose", "version", "--short"])
         run("build", [*compose, "build", "mcp-server", "fleetbase-app"])
         run("start", [*compose, "up", "-d", "--wait", "--wait-timeout", "600", "fleetbase-app"])
+        # Native v1 workflow plus every v2 endpoint assumption (fleetbase-api-audit.md),
+        # then proof that the probe itself left a clean stack.
+        run(
+            "native-contract-proof",
+            [*compose, "exec", "-T", "fleetbase-app", "php", "/opt/crucible/native-proof.php"],
+        )
+        run(
+            "native-contract-proof-cleanup",
+            [*compose, "exec", "-T", "fleetbase-app", "php", "/opt/crucible/count-state.php"],
+        )
         outcomes = {}
         for policy in ("reference", "greedy", "do_nothing", "stop_early"):
             outcomes[policy] = local_episode(policy, policy)

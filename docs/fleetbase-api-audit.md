@@ -163,3 +163,49 @@ not a middleware bypass patch. The failed attempt remains an infrastructure
 failure and must not enter economic comparisons. Source:
 [ApiRateLimits](https://github.com/fleetbase/core-api/blob/ac97b5620b260660ae4e6fd5ea0e64025629b0c9/src/Support/ApiRateLimits.php),
 [rate-limit configuration](https://github.com/fleetbase/core-api/blob/ac97b5620b260660ae4e6fd5ea0e64025629b0c9/config/api.php).
+
+## v2 operations (unverified against live stack)
+
+Plan step 5 ports the v2 tools to `FleetbaseAdapter`. Nothing in this section was
+executed against a native installation; it is derived from the pinned FleetOps route
+and controller sources named above, and is **offline-verified only** against the
+HTTP fake in `fleetbase_dispatch/tests/test_parity.py`, which implements exactly these
+assumptions. `deployment/native-proof.php` checks each assumption on a clean stack
+and exits nonzero naming the first one that fails; `scripts/fleetbase_smoke.py` runs
+it before any episode. Until that probe passes, treat every row below as unverified.
+
+| Operation | Endpoint and assumption | Read-back predicate |
+|---|---|---|
+| Cancel (agent) | `DELETE /v1/orders/:id/cancel` sets status `canceled` (native spelling) for created, dispatched and started orders | `status == "canceled"` |
+| Update note/priority | `PUT /v1/orders/:id` with `meta`; the adapter always sends the full merged meta and clears keys by writing `null`, so replace and merge semantics give the same result | each changed meta key equals the sent value |
+| Unassign | `PUT /v1/orders/:id` with `driver: null, vehicle: null` clears both assignments; omitting the keys keeps them | `driver_assigned` and `vehicle_assigned` are not objects |
+| Un-dispatch | **No native capability assumed.** Fleetbase has no un-dispatch, and a second `PATCH /dispatch` is rejected (audited). Meta fallback: unassigning a natively dispatched order sets `meta.crucible_undispatched = true`; the effective dispatch flag (in `committed()` and the snapshot) is native `dispatched` without that marker; re-dispatch clears the marker instead of a native dispatch | marker equals sent value |
+| Multiple orders per driver | Assign/dispatch accept a driver that already holds dispatched orders | as assign/dispatch |
+| Route (stop list) | **No native cross-order sequencing.** Meta fallback: ranks in `meta.crucible_route = {"pickup": r, "dropoff": r}`, `null` when unassigned or cancelled; assign appends after the vehicle's highest rank | meta route equals sent value |
+| Customer cancellation (world) | `PUT` meta `cancelled_by: "customer"`, route `null`, then `DELETE /cancel`; a started (on-board) order can be cancelled | as above |
+| Dropoff change (world) | `PUT /v1/places/:id` with `latitude`/`longitude` moves the order's tenant-owned dropoff place; the point is also kept in `meta.dropoff` | place `latitude`/`longitude` or `location.coordinates` match |
+| Breakdown unassign (world) | as unassign | as unassign |
+| Breakdown / repair / shift end (world) | `PUT /v1/vehicles/:id` with free-string `status`: `out_of_service`, `available`, `inactive` (shift end wins over breakdown). These values are this adapter's convention, not a native enum | `status` equals sent value |
+
+Rules that native Fleetbase may not enforce are checked in the adapter before any
+request, exactly as in `InMemoryAdapter`: no assign/unassign/cancel after verified
+pickup, no change to a cancelled order, only `note`/`priority` editable, every route
+stop assigned to the vehicle. A native 4xx during a world change is reported as an
+infrastructure failure, never as a rejected agent operation.
+
+All v2 mutations use the existing discipline: read first and send nothing if the
+requested state is committed; after a lost response, a 500 or a response that is not
+the record, read back before deciding; never resubmit before read-back. The fake
+parity tests repeat the whole reference trace with every 7th (and, adapter-level,
+every 3rd) mutation committing and then returning HTTP 500.
+
+Cleanup is unchanged: cancelled orders stay active rows until the adapter deletes
+them, and `DELETE /v1/orders/:id` is assumed to work on a cancelled order.
+`deployment/count-state.php` now also reports `orders_canceled` (informational; the
+clean criterion already requires zero active orders). Step 5 changed this helper, so
+the `count_helper_sha256` in `fleetbase-native-proof.json` describes the v1 proof only;
+a new proof record is part of Track C.
+
+If the live probe disproves an assumption, the fallback is meta, as for routes: for
+example, if `driver: null` does not clear the assignment, add a `crucible_unassigned`
+meta marker that `committed()` honours, and re-run parity.

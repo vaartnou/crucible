@@ -7,9 +7,8 @@ from typing import cast
 import pytest
 from pydantic import JsonValue
 
-from crucible.backends import BackendEpisode, BackendError, ResourceLease
+from crucible.backends import BackendError
 from crucible.core.tools import ToolCall, ToolResult
-from crucible.envs.fleetbase_dispatch.adapter import FleetbaseAdapter
 from crucible.envs.fleetbase_dispatch.memory_adapter import InMemoryAdapter
 from crucible.envs.fleetbase_dispatch.task import (
     BACKEND_ENV,
@@ -416,19 +415,3 @@ async def test_dispatch_backend_selection(monkeypatch: pytest.MonkeyPatch) -> No
     with pytest.raises(RuntimeError):
         await task.reset(0)
     await task.aclose()
-
-
-async def test_native_adapter_lacks_v2_operations_until_step_5() -> None:
-    async def release() -> None:
-        return None
-
-    lease = ResourceLease("episode", "exclusive", "exclusive", release)
-    native = FleetbaseAdapter(BackendEpisode(lease, cast(object, None)))  # pyright: ignore[reportArgumentType]
-    with pytest.raises(NotImplementedError, match="step 5"):
-        await native.cancel_order("r1")
-    with pytest.raises(NotImplementedError, match="step 5"):
-        await native.unassign_order("r1")
-    with pytest.raises(NotImplementedError, match="step 5"):
-        await native.update_order("r1", {"note": "x"})
-    with pytest.raises(NotImplementedError, match="step 5"):
-        await native.set_route("v1", [])

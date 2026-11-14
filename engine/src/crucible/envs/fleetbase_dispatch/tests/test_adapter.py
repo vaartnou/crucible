@@ -49,6 +49,7 @@ async def app() -> AsyncIterator[tuple[FleetbaseAdapter, list[str], dict[str, Js
             data = json.loads(request.content)
             record["driver_assigned"] = {"id": data["driver"]}
             record["vehicle_assigned"] = {"id": data["vehicle"]}
+            record["meta"] = data["meta"]
             if fail_assignment:
                 fail_assignment = False
                 return httpx.Response(500, json={"error": "secret internal config"})

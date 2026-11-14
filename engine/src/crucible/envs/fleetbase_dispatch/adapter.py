@@ -1,4 +1,25 @@
-"""Native Fleetbase API operations and private verified-progress synchronization."""
+"""Native Fleetbase API operations and private verified-progress synchronization.
+
+Every mutation follows one discipline: read the record, send nothing if the requested
+state is already committed, and after any ambiguous failure (lost response, HTTP 500)
+read the record back before deciding. A mutation is never resubmitted blind.
+
+v2 state that native Fleetbase does not model lives in the order's ``meta``
+(see ``docs/fleetbase-api-audit.md``, "v2 operations"):
+
+- ``crucible_route``: ``{"pickup": rank, "dropoff": rank}`` or ``null``. Fleetbase has
+  no cross-order stop sequencing for a driver, so route ranks are meta only.
+- ``crucible_undispatched``: ``true`` after an unassign of a dispatched order. Native
+  Fleetbase has no un-dispatch; the effective dispatch flag is native ``dispatched``
+  without this marker. A later dispatch clears the marker instead of a second native
+  dispatch (which Fleetbase rejects).
+- ``note``, ``priority``, ``cancelled_by`` and ``dropoff``, as in the memory backend.
+
+Keys are cleared by writing ``null``, so the result is the same whether the native
+``PUT`` replaces or merges ``meta``. Guards that native Fleetbase may not enforce
+(changes after pickup, changes to a cancelled order) are checked here, as in the memory
+backend, so both backends reject the same calls.
+"""
 
 from collections.abc import Callable
 from typing import cast
@@ -14,9 +35,36 @@ from crucible.envs.fleetbase_dispatch.world import Request, Vehicle
 _JSON = TypeAdapter(JsonValue)
 _PROGRESS = frozenset({"picked_up", "delivered", "delivered_late"})
 _V2_CHANGES = frozenset({"unassigned", "customer_cancelled", "dropoff_changed"})
-_STEP5 = "Native Fleetbase does not support this v2 operation yet (plan step 5)"
+_VEHICLE_EVENTS = frozenset({"breakdown", "repaired", "shift_ended"})
+_EDITABLE = frozenset({"note", "priority"})
+CANCELLED = "canceled"  # native spelling
+# Native vehicle status is a free string; these values are this adapter's convention.
+VEHICLE_AVAILABLE, VEHICLE_BROKEN, VEHICLE_OFF_SHIFT = "available", "out_of_service", "inactive"
 
 __all__ = ["FleetbaseAdapter", "FleetbaseOperationError"]
+
+Predicate = Callable[[dict[str, JsonValue]], bool]
+
+
+def _coordinates(point: tuple[float, float] | list[float]) -> tuple[float, float]:
+    """Scenario distance units to deterministic Helsinki (latitude, longitude)."""
+    return 60.17 + point[1] * 0.001, 24.94 + point[0] * 0.001
+
+
+def _place_at(record: dict[str, JsonValue], latitude: float, longitude: float) -> bool:
+    """Whether a native place record is at the coordinates (either serialization)."""
+    lat, lon = record.get("latitude"), record.get("longitude")
+    location = record.get("location")
+    if isinstance(location, dict):
+        coordinates = location.get("coordinates")
+        if isinstance(coordinates, list) and len(coordinates) == 2:
+            lon, lat = coordinates
+    return (
+        isinstance(lat, int | float)
+        and isinstance(lon, int | float)
+        and abs(lat - latitude) < 1e-7
+        and abs(lon - longitude) < 1e-7
+    )
 
 
 class FleetbaseAdapter:
@@ -29,7 +77,10 @@ class FleetbaseAdapter:
         self._drivers: dict[str, str] = {}
         self._vehicles: dict[str, str] = {}
         self._places: dict[str, str] = {}
+        self._order_places: dict[str, tuple[str, str]] = {}
         self._synced: set[tuple[str, str]] = set()
+        self._picked_up: set[str] = set()
+        self._vehicle_flags: dict[str, set[str]] = {}
         self._closed = False
 
     async def _request(
@@ -109,14 +160,44 @@ class FleetbaseAdapter:
                 return existing
             raise
 
+    async def _read(self, path: str) -> dict[str, JsonValue]:
+        return self._record(await self._request("GET", path))
+
+    async def _mutate_record(
+        self,
+        path: str,
+        method: str,
+        target: str,
+        body: dict[str, JsonValue] | None,
+        committed: Predicate,
+        current: dict[str, JsonValue] | None = None,
+    ) -> dict[str, JsonValue]:
+        """Send one mutation to ``target`` unless ``path``'s record already satisfies it."""
+        if current is None:
+            current = await self._read(path)
+        if committed(current):
+            return current
+        try:
+            # A response that is not the record (for example a status envelope) is
+            # ambiguous too and is settled by read-back.
+            result = self._record(await self._request(method, target, body))
+        except BackendError:
+            current = await self._read(path)
+            if committed(current):
+                return current
+            raise
+        if not committed(result):
+            result = await self._read(path)
+            if not committed(result):
+                raise BackendError("Fleetbase mutation did not commit requested state")
+        return result
+
     async def prepare(self, vehicles: tuple[Vehicle, ...]) -> None:
         for vehicle in vehicles:
+            latitude, longitude = _coordinates(vehicle.position)
             location: dict[str, JsonValue] = {
                 "type": "Point",
-                "coordinates": [
-                    24.94 + vehicle.position[0] * 0.001,
-                    60.17 + vehicle.position[1] * 0.001,
-                ],
+                "coordinates": [longitude, latitude],
             }
             driver_id = self._prefix + vehicle.driver_id
             driver = await self._create(
@@ -137,12 +218,13 @@ class FleetbaseAdapter:
                     "internal_id": native_id,
                     "name": "Crucible " + vehicle.id,
                     "plate_number": native_id,
-                    "status": "available",
+                    "status": VEHICLE_AVAILABLE,
                     "location": location,
                 },
                 native_id,
             )
             self._vehicles[vehicle.id] = cast(str, native["id"])
+            self._vehicle_flags.setdefault(vehicle.id, set())
 
     async def create_order(self, request: Request) -> dict[str, JsonValue]:
         internal_id = self._prefix + request.id
@@ -150,12 +232,13 @@ class FleetbaseAdapter:
         # Scenario coordinates are local distance units, mapped deterministically to
         # valid coordinates for application records. Economics use simulator geometry.
         def place(point: tuple[float, float], name: str) -> dict[str, JsonValue]:
+            latitude, longitude = _coordinates(point)
             return {
                 "street1": name,
                 "city": "Helsinki",
                 "country": "FI",
-                "latitude": 60.17 + point[1] * 0.001,
-                "longitude": 24.94 + point[0] * 0.001,
+                "latitude": latitude,
+                "longitude": longitude,
             }
 
         pickup = place(request.pickup, "Crucible pickup " + internal_id)
@@ -168,6 +251,7 @@ class FleetbaseAdapter:
             native_place = cast(str, record["id"])
             self._places[native_place] = native_place
             native_places.append(native_place)
+        self._order_places[request.id] = (native_places[0], native_places[1])
         order = await self._create(
             "orders",
             {
@@ -191,11 +275,19 @@ class FleetbaseAdapter:
                     self._places[native_place] = native_place
         return order
 
+    # Order helpers -------------------------------------------------------------------
+
     async def _read_order(self, request_id: str) -> dict[str, JsonValue]:
         native = self._orders.get(request_id)
         if native is None:
             raise FleetbaseOperationError("Create the request's native order first")
-        return self._record(await self._request("GET", "orders/" + native))
+        return await self._read("orders/" + native)
+
+    async def _open_order(self, request_id: str) -> dict[str, JsonValue]:
+        order = await self._read_order(request_id)
+        if order.get("status") == CANCELLED:
+            raise FleetbaseOperationError("Order is cancelled")
+        return order
 
     async def _mutate(
         self,
@@ -203,102 +295,260 @@ class FleetbaseAdapter:
         method: str,
         suffix: str,
         body: dict[str, JsonValue] | None,
-        committed: Callable[[dict[str, JsonValue]], bool],
+        committed: Predicate,
+        current: dict[str, JsonValue] | None = None,
     ) -> dict[str, JsonValue]:
-        current = await self._read_order(request_id)
-        if committed(current):
-            return current
-        try:
-            result = self._record(
-                await self._request(method, "orders/" + self._orders[request_id] + suffix, body)
-            )
-        except BackendError:
+        if current is None:
             current = await self._read_order(request_id)
-            if committed(current):
-                return current
-            raise
-        if not committed(result):
-            result = await self._read_order(request_id)
-            if not committed(result):
-                raise BackendError("Fleetbase mutation did not commit requested state")
-        return result
+        path = "orders/" + self._orders[request_id]
+        return await self._mutate_record(path, method, path + suffix, body, committed, current)
+
+    @staticmethod
+    def _meta(order: dict[str, JsonValue]) -> dict[str, JsonValue]:
+        meta = order.get("meta")
+        return dict(meta) if isinstance(meta, dict) else {}
+
+    async def _update_order(
+        self,
+        request_id: str,
+        order: dict[str, JsonValue],
+        changes: dict[str, JsonValue],
+        fields: dict[str, JsonValue] | None = None,
+        also: Predicate | None = None,
+    ) -> dict[str, JsonValue]:
+        """``PUT`` meta ``changes`` (the full merged meta) plus native ``fields``."""
+
+        def done(item: dict[str, JsonValue]) -> bool:
+            meta = self._meta(item)
+            return all(meta.get(key) == value for key, value in changes.items()) and (
+                also is None or also(item)
+            )
+
+        body: dict[str, JsonValue] = {**(fields or {}), "meta": self._meta(order) | changes}
+        return await self._mutate(request_id, "PUT", "", body, done, order)
+
+    def _vehicle_of(self, order: dict[str, JsonValue]) -> str | None:
+        """The vehicle whose native vehicle and driver are both assigned to the order."""
+        vehicle, driver = order.get("vehicle_assigned"), order.get("driver_assigned")
+        native = vehicle.get("id") if isinstance(vehicle, dict) else None
+        reverse = {value: key for key, value in self._vehicles.items()}
+        vehicle_id = reverse.get(native) if isinstance(native, str) else None
+        if (
+            vehicle_id is None
+            or not isinstance(driver, dict)
+            or driver.get("id") != self._drivers[vehicle_id]
+        ):
+            return None
+        return vehicle_id
+
+    def _dispatched(self, order: dict[str, JsonValue]) -> bool:
+        return (
+            order.get("dispatched") is True
+            and self._meta(order).get("crucible_undispatched") is not True
+        )
+
+    @staticmethod
+    def _unassigned(order: dict[str, JsonValue]) -> bool:
+        return not isinstance(order.get("driver_assigned"), dict) and not isinstance(
+            order.get("vehicle_assigned"), dict
+        )
+
+    async def _unassign(self, request_id: str, order: dict[str, JsonValue]) -> dict[str, JsonValue]:
+        changes: dict[str, JsonValue] = {"crucible_route": None}
+        if order.get("dispatched") is True:
+            changes["crucible_undispatched"] = True
+        return await self._update_order(
+            request_id,
+            order,
+            changes,
+            {"driver": None, "vehicle": None},
+            self._unassigned,
+        )
+
+    async def _cancel(self, request_id: str, order: dict[str, JsonValue]) -> dict[str, JsonValue]:
+        return await self._mutate(
+            request_id,
+            "DELETE",
+            "/cancel",
+            None,
+            lambda item: item.get("status") == CANCELLED,
+            order,
+        )
+
+    # Agent operations ----------------------------------------------------------------
 
     async def assign_order(self, request_id: str, vehicle_id: str) -> dict[str, JsonValue]:
         if vehicle_id not in self._vehicles:
             raise FleetbaseOperationError("Unknown vehicle")
+        order = await self._open_order(request_id)
+        if self._vehicle_of(order) == vehicle_id:
+            return order
+        if request_id in self._picked_up:
+            raise FleetbaseOperationError("Order cannot change after pickup")
+        top = -1
+        for other_id, commit in (await self.committed()).items():
+            if other_id != request_id and commit["vehicle_id"] == vehicle_id:
+                for key in ("pickup_rank", "dropoff_rank"):
+                    rank = commit[key]
+                    if isinstance(rank, int):
+                        top = max(top, rank)
+        route: dict[str, JsonValue] = {"pickup": top + 1, "dropoff": top + 2}
         driver, vehicle = self._drivers[vehicle_id], self._vehicles[vehicle_id]
-
-        def matches(order: dict[str, JsonValue]) -> bool:
-            assigned_driver, assigned_vehicle = (
-                order.get("driver_assigned"),
-                order.get("vehicle_assigned"),
-            )
-            return (
-                isinstance(assigned_driver, dict)
-                and assigned_driver.get("id") == driver
-                and isinstance(assigned_vehicle, dict)
-                and assigned_vehicle.get("id") == vehicle
-            )
-
-        return await self._mutate(
-            request_id, "PUT", "", {"driver": driver, "vehicle": vehicle}, matches
+        return await self._update_order(
+            request_id,
+            order,
+            {"crucible_route": route},
+            {"driver": driver, "vehicle": vehicle},
+            lambda item: self._vehicle_of(item) == vehicle_id,
         )
 
     async def dispatch_order(self, request_id: str) -> dict[str, JsonValue]:
-        return await self._mutate(
-            request_id, "PATCH", "/dispatch", None, lambda item: item.get("dispatched") is True
-        )
-
-    # v2 operations: ported to native Fleetbase in plan step 5. Until then the native
-    # backend supports only create, assign and dispatch, and fleetbase_dispatch@1 runs
-    # its v2 tools with FLEETBASE_BACKEND=memory.
+        order = await self._open_order(request_id)
+        if self._dispatched(order):
+            return order
+        if order.get("dispatched") is True:
+            # Natively dispatched before an unassign: re-dispatch clears the marker.
+            if not isinstance(order.get("driver_assigned"), dict):
+                raise FleetbaseOperationError("Assign a driver before dispatch")
+            return await self._update_order(request_id, order, {"crucible_undispatched": None})
+        return await self._mutate(request_id, "PATCH", "/dispatch", None, self._dispatched, order)
 
     async def cancel_order(self, request_id: str) -> dict[str, JsonValue]:
-        raise NotImplementedError(_STEP5)
+        order = await self._read_order(request_id)
+        if order.get("status") == CANCELLED:
+            return order
+        if request_id in self._picked_up:
+            raise FleetbaseOperationError("Order cannot change after pickup")
+        return await self._cancel(request_id, order)
 
     async def update_order(
         self, request_id: str, fields: dict[str, JsonValue]
     ) -> dict[str, JsonValue]:
-        raise NotImplementedError(_STEP5)
+        order = await self._open_order(request_id)
+        if set(fields) - _EDITABLE:
+            raise FleetbaseOperationError("Only note and priority can be updated")
+        return await self._update_order(request_id, order, dict(fields))
 
     async def unassign_order(self, request_id: str) -> dict[str, JsonValue]:
-        raise NotImplementedError(_STEP5)
+        order = await self._open_order(request_id)
+        if request_id in self._picked_up:
+            raise FleetbaseOperationError("Order cannot change after pickup")
+        return await self._unassign(request_id, order)
 
     async def set_route(self, vehicle_id: str, stops: list[tuple[str, str]]) -> None:
-        raise NotImplementedError(_STEP5)
+        if vehicle_id not in self._vehicles:
+            raise FleetbaseOperationError("Unknown vehicle")
+        orders: dict[str, dict[str, JsonValue]] = {}
+        ranks: dict[str, dict[str, JsonValue]] = {}
+        # Validate every stop before the first write, like the memory backend.
+        for rank, (request_id, action) in enumerate(stops):
+            if request_id not in orders:
+                orders[request_id] = await self._open_order(request_id)
+            if self._vehicle_of(orders[request_id]) != vehicle_id:
+                raise FleetbaseOperationError("Order is not assigned to this vehicle")
+            if action not in {"pickup", "dropoff"}:
+                raise FleetbaseOperationError("Unknown stop action")
+            ranks.setdefault(request_id, {})[action] = rank
+        for request_id, route in ranks.items():
+            order = orders[request_id]
+            previous = self._meta(order).get("crucible_route")
+            merged: dict[str, JsonValue] = dict(previous) if isinstance(previous, dict) else {}
+            merged.update(route)
+            await self._update_order(request_id, order, {"crucible_route": merged})
 
     async def committed(self) -> dict[str, dict[str, JsonValue]]:
         result: dict[str, dict[str, JsonValue]] = {}
-        reverse = {native: key for key, native in self._vehicles.items()}
         for request_id in self._orders:
             order = await self._read_order(request_id)
-            vehicle = order.get("vehicle_assigned")
-            driver = order.get("driver_assigned")
-            native_vehicle = vehicle.get("id") if isinstance(vehicle, dict) else None
-            vehicle_id = reverse.get(native_vehicle) if isinstance(native_vehicle, str) else None
-            valid_driver = (
-                isinstance(driver, dict)
-                and vehicle_id is not None
-                and driver.get("id") == self._drivers[vehicle_id]
-            )
+            cancelled = order.get("status") == CANCELLED
+            route = self._meta(order).get("crucible_route")
+            route = route if isinstance(route, dict) and not cancelled else {}
+            pickup, dropoff = route.get("pickup"), route.get("dropoff")
             result[request_id] = {
-                "vehicle_id": vehicle_id if valid_driver else None,
-                "dispatched": order.get("dispatched") is True,
-                "cancelled": False,
-                "pickup_rank": None,
-                "dropoff_rank": None,
+                "vehicle_id": None if cancelled else self._vehicle_of(order),
+                "dispatched": self._dispatched(order),
+                "cancelled": cancelled,
+                "pickup_rank": pickup if isinstance(pickup, int) else None,
+                "dropoff_rank": dropoff if isinstance(dropoff, int) else None,
             }
         return result
 
+    # World synchronization -----------------------------------------------------------
+
+    async def _sync_vehicle(self, event: PhysicalEvent) -> None:
+        vehicle_id = event.vehicle_id
+        if vehicle_id is None or vehicle_id not in self._vehicles:
+            return
+        flags = self._vehicle_flags.setdefault(vehicle_id, set())
+        if event.kind == "breakdown":
+            flags.add("broken")
+        elif event.kind == "repaired":
+            flags.discard("broken")
+        else:
+            flags.add("off_shift")
+        status = (
+            VEHICLE_OFF_SHIFT
+            if "off_shift" in flags
+            else VEHICLE_BROKEN
+            if "broken" in flags
+            else VEHICLE_AVAILABLE
+        )
+        path = "vehicles/" + self._vehicles[vehicle_id]
+        await self._mutate_record(
+            path, "PUT", path, {"status": status}, lambda item: item.get("status") == status
+        )
+
+    async def _sync_change(self, event: PhysicalEvent) -> None:
+        request_id = event.request_id
+        order = await self._read_order(request_id)
+        if event.kind == "unassigned":
+            await self._unassign(request_id, order)
+        elif event.kind == "customer_cancelled":
+            if order.get("status") != CANCELLED:
+                order = await self._update_order(
+                    request_id, order, {"cancelled_by": "customer", "crucible_route": None}
+                )
+                await self._cancel(request_id, order)
+        else:
+            point = event.data.get("dropoff")
+            if (
+                not isinstance(point, list)
+                or len(point) != 2
+                or not all(isinstance(value, int | float) for value in point)
+            ):
+                raise BackendError("Invalid dropoff change")
+            latitude, longitude = _coordinates(cast(list[float], point))
+            native_place = self._order_places[request_id][1]
+            path = "places/" + native_place
+            await self._mutate_record(
+                path,
+                "PUT",
+                path,
+                {"latitude": latitude, "longitude": longitude},
+                lambda item: _place_at(item, latitude, longitude),
+            )
+            await self._update_order(request_id, order, {"dropoff": list(point)})
+
     async def sync_events(self, events: list[PhysicalEvent]) -> None:
         for event in events:
+            if event.kind in _VEHICLE_EVENTS:
+                await self._sync_vehicle(event)
+                continue
+            if event.kind in _V2_CHANGES:
+                if event.request_id not in self._orders:
+                    continue
+                try:
+                    await self._sync_change(event)
+                except FleetbaseOperationError:
+                    # A verified world change is not the agent's operation to reject.
+                    raise BackendError("Fleetbase rejected a world record change") from None
+                continue
             key = (event.request_id, event.kind)
-            if event.kind in _V2_CHANGES and event.request_id in self._orders:
-                raise NotImplementedError(_STEP5)
             if key in self._synced or event.kind not in _PROGRESS:
                 continue
             request_id = event.request_id
             order = await self._read_order(request_id)
+            self._picked_up.add(request_id)
             if order.get("status") != "completed":
                 order = await self._mutate(
                     request_id, "POST", "/start", None, lambda item: item.get("started") is True
@@ -334,7 +584,7 @@ class FleetbaseAdapter:
         orders: dict[str, JsonValue] = {}
         for request_id in self._orders:
             order = await self._read_order(request_id)
-            orders[request_id] = {
+            record: dict[str, JsonValue] = {
                 key: order.get(key)
                 for key in (
                     "id",
@@ -348,6 +598,9 @@ class FleetbaseAdapter:
                     "payload",
                 )
             }
+            # The effective commitment: native dispatch without the unassign marker.
+            record["dispatched"] = self._dispatched(order)
+            orders[request_id] = record
         native_counts: dict[str, int] = {}
         for record in await self._list("orders"):
             internal = record.get("internal_id")
