@@ -12,9 +12,9 @@ from typing import Any
 import numpy as np
 import pytest
 
-from crucible.core.registry import get_task
-from crucible.core.tools import ToolCall
-from crucible.envs.supplygym.cala_task import SupplyGymCalaTask
+from crucible.core.registry import get_policy, get_task
+from crucible.core.tools import Observation, ToolCall
+from crucible.envs.supplygym.cala_task import SupplyGymCalaTask, cala_scoring_hash
 from crucible.envs.supplygym.cala_world import ASSUMPTIONS, cala_world_identity, make_cala_world
 from crucible.envs.supplygym.grader import (
     SCORING_HASH,
@@ -24,10 +24,14 @@ from crucible.envs.supplygym.grader import (
 )
 from crucible.envs.supplygym.play import CALA_REGIME, Play
 from crucible.envs.supplygym.policies.baselines import Availability
-from crucible.envs.supplygym.policies.reference import make_decider
+from crucible.envs.supplygym.policies.reference import (
+    CALA_REFERENCE,
+    cala_policy_identity,
+    make_decider,
+)
 from crucible.envs.supplygym.policies.views import StatusView, to_vector
 from crucible.envs.supplygym.sim import ACT_DIM
-from crucible.envs.supplygym.task import ControlsArgs
+from crucible.envs.supplygym.task import ControlsArgs, SupplyGymFreshTask, SupplyGymTask
 from crucible.envs.supplygym.world import GAMMA_PROP, REGIONS, _health, make_tape, tape_digest
 
 SLICE_SHA256 = "25ed29a8e17833b63155f7f30ff1840d8611ab6a9788b3da1a60d2406a7bc63e"
@@ -178,7 +182,11 @@ def test_salt_changes_tape_not_static_world_and_replays_keep_identity() -> None:
         assert tape_digest(anchor.env.tape) == tape_digest(salted.env.tape)
     expected = hashlib.sha256(
         json.dumps(
-            {"scoring": SCORING_HASH, "world": cala_world_identity()},
+            {
+                "scoring": SCORING_HASH,
+                "world": cala_world_identity(),
+                "policy": cala_policy_identity(),
+            },
             sort_keys=True,
             separators=(",", ":"),
         ).encode()
@@ -265,7 +273,7 @@ def test_task_tools_refusals_approval_and_finish_use_cala_regime() -> None:
 def test_weekly_ledger_matches_daily_simulation_and_does_not_change_ppo() -> None:
     play = Play(1001, CALA_REGIME)
     raw = Play(1001, CALA_REGIME)
-    reference = make_decider("ppo")
+    reference = make_decider(CALA_REFERENCE)
     for _ in range(6):
         status = play.status()
         assert reference.decide(status) == reference.decide(
@@ -288,7 +296,7 @@ def test_ppo_tool_path_matches_same_game_reference_replay() -> None:
     async def run() -> None:
         task = SupplyGymCalaTask()
         await task.reset(1002, salt="parity")
-        decider = make_decider("ppo")
+        decider = make_decider(CALA_REFERENCE)
         assert task._play is not None
         while not task.done():
             status = await task.step(ToolCall(name="get_status"))
@@ -299,6 +307,115 @@ def test_ppo_tool_path_matches_same_game_reference_replay() -> None:
         assert task._play.env.summary() == replay.env.summary()
         assert (await task.grade()).breakdown["profit"] == replay.env.summary()["profit"]
         assert grade_play(replay).breakdown["delta_vs_ref"] == 0
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("salt", ["", "private-evaluation-salt"])
+@pytest.mark.parametrize("policy_name", ["reference", "stop_early", "transfer_ppo"])
+def test_registered_solution_and_prefix_match_same_tape_replay(salt: str, policy_name: str) -> None:
+    """Harbor selects this registered reference too; neither path receives the secret salt."""
+
+    async def run() -> None:
+        task = SupplyGymCalaTask()
+        obs = await task.reset(1004, salt=salt)
+        policy = get_policy(policy_name, task.spec.ref)
+        await policy.reset(task.spec, task.tools(), task.instruction())
+        while not task.done():
+            call = await policy.act(obs)
+            assert call is not None
+            result = await task.step(call)
+            assert result.ok
+            obs = Observation(last_result=result)
+        assert task._play is not None
+        expected = Play(1004, CALA_REGIME, salt)
+        name = "ppo" if policy_name == "transfer_ppo" else CALA_REFERENCE
+        if policy_name == "stop_early":
+            decider = make_decider(name)
+            for _ in range(4):
+                expected.apply(decider.decide(expected.status()))
+            expected.finished = True
+        else:
+            expected = replay_reference(expected, name)
+        expected_score = grade_play(expected)
+        score = await task.grade()
+        assert score == expected_score
+        assert task._play.env.summary() == expected.env.summary()
+        if policy_name == "reference":
+            assert score.breakdown["delta_vs_ref"] == 0
+        if policy_name == "stop_early":
+            assert task._play.weeks == 4
+
+    asyncio.run(run())
+
+
+def test_cala_identity_binds_checkpoint_bytes_and_policy_config(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from crucible.envs.supplygym.policies import reference
+
+    original = cala_scoring_hash()
+    assert SupplyGymCalaTask.scoring_hash == original
+    identity = cala_policy_identity()
+    raw = (
+        files("crucible.envs.supplygym.policies") / "data" / reference.CALA_CHECKPOINT
+    ).read_bytes()
+    assert identity["checkpoint_sha256"] == hashlib.sha256(raw).hexdigest()
+    data = tmp_path / "data"
+    data.mkdir()
+    checkpoint = data / reference.CALA_CHECKPOINT
+    checkpoint.write_bytes(raw)
+    monkeypatch.setattr(reference, "files", lambda _: tmp_path)
+    assert cala_scoring_hash() == original
+    checkpoint.write_bytes(raw + b"identity-probe")
+    assert cala_scoring_hash() != original
+    checkpoint.write_bytes(raw)
+    monkeypatch.setitem(reference.CONTROL_SCALES, "alternative_approval_threshold", 0.6)
+    assert cala_scoring_hash() != original
+    assert SupplyGymTask.scoring_hash == SupplyGymFreshTask.scoring_hash == SCORING_HASH
+
+
+def test_training_record_matches_packaged_cala_reference_and_uses_only_train_seeds() -> None:
+    record = json.loads(
+        files("crucible.envs.supplygym.policies")
+        .joinpath("data/cala_ppo.training.json")
+        .read_bytes()
+    )
+    assert record["model_sha256"] == cala_policy_identity()["checkpoint_sha256"]
+    assert record["world"] == cala_world_identity()
+    tuning, selection, distillation = (
+        record[key]
+        for key in ("teacher_tuning_seeds", "checkpoint_validation_seeds", "distillation_seeds")
+    )
+    reserved = {*tuning, *selection, *distillation}
+    assert len(reserved) == len(tuning) + len(selection) + len(distillation)
+    assert reserved <= set(range(20000, 22000))
+    rollout_bank = sorted(set(range(20000, 22000)) - reserved)
+    assert (
+        record["ppo_seed_partition"]["sha256_json"]
+        == hashlib.sha256(json.dumps(rollout_bank).encode()).hexdigest()
+    )
+    assert 0 < record["checkpoint_ppo_transitions"] <= record["ppo_transitions"]
+
+
+@pytest.mark.parametrize("task_ref", ["supplygym@1", "supplygym-fresh@1"])
+def test_legacy_references_and_prefix_still_use_original_checkpoint(task_ref: str) -> None:
+    async def run() -> None:
+        task = get_task(task_ref)
+        await task.reset(1001, salt="legacy-parity")
+        assert isinstance(task, SupplyGymTask) and task._play is not None
+        status = await task.step(ToolCall(name="get_status"))
+        expected = make_decider("ppo").decide(task._play.status())
+        for name in ("reference", "stop_early"):
+            policy = get_policy(name, task_ref)
+            await policy.reset(task.spec, task.tools(), task.instruction())
+            assert await policy.act(Observation()) == ToolCall(name="get_status")
+            call = await policy.act(Observation(last_result=status))
+            assert call is not None and call.args == expected
+        implicit = replay_reference(task._play)
+        explicit = replay_reference(task._play, "ppo")
+        assert implicit.env.summary() == explicit.env.summary()
+        assert task.scoring_hash == SCORING_HASH
 
     asyncio.run(run())
 

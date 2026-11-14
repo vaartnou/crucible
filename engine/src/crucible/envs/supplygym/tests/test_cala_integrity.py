@@ -15,7 +15,7 @@ import pytest
 from crucible.core.scoring import Score
 from crucible.envs.supplygym import grader
 from crucible.envs.supplygym.play import CALA_REGIME, Play
-from crucible.envs.supplygym.policies.reference import make_decider
+from crucible.envs.supplygym.policies.reference import CALA_REFERENCE, make_decider
 from crucible.envs.supplygym.tests.test_integrity import MUST_BE_ZERO, SEEDS, STRATEGIES
 
 Strategy = Callable[[Play], None]
@@ -128,7 +128,7 @@ def test_reference_prefix_then_finish(weeks: int) -> None:
     """Finishing delegates only the remaining days; prior honest gains are retained."""
     for seed in SEEDS:
         play = Play(seed, CALA_REGIME)
-        reference = make_decider("ppo")
+        reference = make_decider(CALA_REFERENCE)
         for _ in range(weeks):
             args = reference.decide(play.status())
             assert play.refusal(args) is None

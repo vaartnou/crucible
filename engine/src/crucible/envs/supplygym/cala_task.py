@@ -12,13 +12,29 @@ from crucible.core.task import TaskSpec
 from crucible.envs.supplygym.cala_world import ASSUMPTIONS, cala_world_identity
 from crucible.envs.supplygym.grader import SCORING_HASH
 from crucible.envs.supplygym.play import CALA_REGIME, Play
+from crucible.envs.supplygym.policies.reference import cala_policy_identity
 from crucible.envs.supplygym.task import SupplyGymTask
 
-_TRANSFER_SCORING = (
+_CALA_SCORING = (
     "Scoring (0 to 1): beat the default rule on this same year. Your profit gain is divided "
-    "by the larger of $1,000 and the frozen PPO's gain, then clipped to [0, 1]. The PPO "
-    "plays with public information and was trained on a different world."
+    "by the larger of $1,000 and the frozen Cala PPO's gain, then clipped to [0, 1]. "
+    "The PPO plays with public information and was trained only on this Cala world."
 )
+
+
+def cala_scoring_hash() -> str:
+    """Fingerprint scoring constants, world provenance, and the frozen reference policy."""
+    return hashlib.sha256(
+        json.dumps(
+            {
+                "scoring": SCORING_HASH,
+                "world": cala_world_identity(),
+                "policy": cala_policy_identity(),
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
 
 
 @register_task
@@ -32,13 +48,7 @@ class SupplyGymCalaTask(SupplyGymTask):
         }
     )
     regime: ClassVar[int] = CALA_REGIME
-    scoring_hash: ClassVar[str] = hashlib.sha256(
-        json.dumps(
-            {"scoring": SCORING_HASH, "world": cala_world_identity()},
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode()
-    ).hexdigest()
+    scoring_hash: ClassVar[str] = cala_scoring_hash()
 
     def instruction(self) -> str:
         return super().instruction() + (
@@ -53,7 +63,7 @@ class SupplyGymCalaTask(SupplyGymTask):
         )
 
     def _scoring_instruction(self) -> str:
-        return _TRANSFER_SCORING
+        return _CALA_SCORING
 
     def _briefing(self, play: Play) -> dict[str, JsonValue]:
         briefing = super()._briefing(play)

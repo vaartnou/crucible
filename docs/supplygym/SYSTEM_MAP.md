@@ -155,4 +155,6 @@ Signal text uses one ASCII headline of at most 160 characters and a `{w}` placeh
 
 The contract calls for a separate task ref for the real-data regime, with its own goldens and reference check. The synthetic PPO's performance on that task measures transfer until a suitable reference/default calibration is demonstrated. The proposed packaged location is `engine/src/crucible/envs/supplygym/packs/<pack_name>/`; fragment acquisition and engine integration remain separate concerns.
 
+For `supplygym-cala@1`, the grader and Harbor solution now replay a frozen Cala-trained PPO. Its weights and inference configuration contribute to the Cala scoring hash. `transfer_ppo` runs the original PPO on the same Cala episodes. Compare raw profit across the two draft revisions and use the scoring hash when comparing normalized rewards.
+
 [PR #15](https://github.com/vaartnou/crucible/pull/15) introduces the synthetic baseline. Its historical fresh-regime measurements report reference underperformance; they do not validate a pack-backed world.

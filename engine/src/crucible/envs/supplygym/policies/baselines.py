@@ -12,11 +12,11 @@ from typing import Any
 from crucible.core.registry import register_policy
 from crucible.core.task import TaskSpec
 from crucible.core.tools import Observation, ToolCall, ToolSpec
-from crucible.envs.supplygym.policies.reference import Decider, make_decider
+from crucible.envs.supplygym.policies.reference import CALA_REFERENCE, Decider, make_decider
 from crucible.envs.supplygym.policies.views import call, parse_status
 
 SUPPLIERS = [f"S{k:02d}" for k in range(1, 11)]
-# Both regimes share their policies; the reference was trained on `supplygym` only.
+# The legacy regimes retain their checkpoint; Cala has its own frozen reference.
 TASK_IDS = ("supplygym", "supplygym-fresh", "supplygym-cala")
 
 
@@ -41,11 +41,13 @@ class _Loop:
         self._weeks = 0
         self._started = False
         self._decider: Decider | None = None
+        self._reference = "ppo"
 
     def _make(self) -> Decider:
         raise NotImplementedError
 
     async def reset(self, task_spec: TaskSpec, tools: list[ToolSpec], instruction: str) -> None:
+        self._reference = CALA_REFERENCE if task_spec.id == "supplygym-cala" else "ppo"
         self._weeks, self._started, self._decider = 0, False, self._make()
 
     async def act(self, obs: Observation) -> ToolCall | None:
@@ -83,7 +85,7 @@ class StopEarly(_Loop):
     weeks_limit = 4
 
     def _make(self) -> Decider:
-        return make_decider("ppo")
+        return make_decider(self._reference)
 
 
 class _Fixed:
@@ -107,6 +109,16 @@ class Reference(_Loop):
     """The reference (PPO) policy played over the tools."""
 
     name = "reference"
+
+    def _make(self) -> Decider:
+        return make_decider(self._reference)
+
+
+@register_policy("transfer_ppo", "supplygym-cala")
+class TransferPpo(_Loop):
+    """The original checkpoint evaluated on the same Cala tape for transfer comparison."""
+
+    name = "transfer_ppo"
 
     def _make(self) -> Decider:
         return make_decider("ppo")
