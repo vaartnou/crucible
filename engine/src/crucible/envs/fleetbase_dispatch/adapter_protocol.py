@@ -3,8 +3,11 @@
 The task reads commitments and records only through this protocol, so every
 backend must return the same shapes:
 
-- ``committed()`` maps each created request ID to
-  ``{"vehicle_id": str | None, "dispatched": bool}``.
+- ``committed()`` maps each created request ID to ``{"vehicle_id": str | None,
+  "dispatched": bool, "cancelled": bool, "pickup_rank": int | None,
+  "dropoff_rank": int | None}``. Ranks order the vehicle's stops; they live in the
+  order's ``meta`` (``crucible_route``), so a vehicle's route is the rank-sorted stops
+  of its dispatched orders.
 - ``snapshot()`` returns ``{"orders": {request_id: record}, "vehicles": {...},
   "drivers": {...}, "duplicate_orders": int}``. Each order record has the keys
   ``id``, ``internal_id``, ``status``, ``dispatched``, ``started``,
@@ -43,11 +46,36 @@ class DispatchAdapter(Protocol):
         ...
 
     async def assign_order(self, request_id: str, vehicle_id: str) -> dict[str, JsonValue]:
-        """Assign the vehicle and its driver to a created order."""
+        """Assign the vehicle and its driver to a created order before pickup.
+
+        A new vehicle gets the order's pickup and dropoff appended to the end of its
+        route. Assigning the current vehicle again changes nothing.
+        """
         ...
 
     async def dispatch_order(self, request_id: str) -> dict[str, JsonValue]:
         """Dispatch an assigned order. A repeated dispatch returns the order unchanged."""
+        ...
+
+    async def cancel_order(self, request_id: str) -> dict[str, JsonValue]:
+        """Cancel an order before pickup. A repeated cancel returns the order unchanged."""
+        ...
+
+    async def update_order(
+        self, request_id: str, fields: dict[str, JsonValue]
+    ) -> dict[str, JsonValue]:
+        """Store the agent-editable fields (``note``, ``priority``) in the order's meta."""
+        ...
+
+    async def unassign_order(self, request_id: str) -> dict[str, JsonValue]:
+        """Clear the vehicle, driver, dispatch flag and route ranks before pickup."""
+        ...
+
+    async def set_route(self, vehicle_id: str, stops: list[tuple[str, str]]) -> None:
+        """Write route ranks for (request_id, "pickup" | "dropoff") stops, in order.
+
+        Every listed order must be assigned to the vehicle.
+        """
         ...
 
     async def committed(self) -> dict[str, dict[str, JsonValue]]:
@@ -55,7 +83,12 @@ class DispatchAdapter(Protocol):
         ...
 
     async def sync_events(self, events: list[PhysicalEvent]) -> None:
-        """Apply verified physical progress (pickup, delivery) to the order records."""
+        """Apply verified world changes to the order records.
+
+        Kinds: ``picked_up``, ``delivered``, ``delivered_late`` (progress),
+        ``unassigned`` (breakdown), ``customer_cancelled`` and ``dropoff_changed``.
+        Other kinds are ignored. Changes to uncreated orders are skipped, except progress.
+        """
         ...
 
     async def snapshot(self) -> dict[str, JsonValue]:

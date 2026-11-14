@@ -6,14 +6,18 @@ It mirrors what ``FleetbaseAdapter`` returns and rejects, as far as the task use
   stable ``internal_id`` first and returns the existing order without a second
   POST. A repeated create therefore returns the existing record and is not an
   error, also for a cancelled order.
-- ``assign_order`` with the vehicle that is already assigned, and
-  ``dispatch_order`` on a dispatched order, return the record unchanged. The
-  native adapter reads the order first and sends no mutation when the requested
-  state is already committed.
+- ``assign_order`` with the vehicle that is already assigned, ``dispatch_order`` on a
+  dispatched order and ``cancel_order`` on a cancelled order return the record
+  unchanged. The native adapter reads the order first and sends no mutation when the
+  requested state is already committed.
 - Rejections (``FleetbaseOperationError``): unknown vehicle, unknown (uncreated)
-  order, cancelled order, dispatch before assignment (native: "assigned driver
-  required"), and reassignment to another vehicle after pickup. The adapter learns
-  about pickup only through ``sync_events``, like native.
+  order, cancelled order, dispatch before assignment, and any change of assignment,
+  route or cancellation after pickup. The adapter learns about pickup only through
+  ``sync_events``, like native.
+- A vehicle can hold many orders. Each order's route position is kept in its meta
+  (``crucible_route``: ``{"pickup": rank, "dropoff": rank}``). Assigning to a new
+  vehicle appends both stops after the vehicle's highest rank; ``set_route`` rewrites
+  the ranks of the listed stops.
 
 Order statuses follow the native transport flow
 ``created -> dispatched -> enroute -> completed``; ``canceled`` uses the native
@@ -28,7 +32,8 @@ from crucible.envs.fleetbase_dispatch.adapter_protocol import FleetbaseOperation
 from crucible.envs.fleetbase_dispatch.sim import PhysicalEvent
 from crucible.envs.fleetbase_dispatch.world import Request, Vehicle
 
-_PROGRESS = frozenset({"picked_up", "delivered", "late"})
+_PROGRESS = frozenset({"picked_up", "delivered", "delivered_late"})
+_EDITABLE = frozenset({"note", "priority"})
 
 
 class InMemoryAdapter:
@@ -61,6 +66,12 @@ class InMemoryAdapter:
             raise FleetbaseOperationError("Order is cancelled")
         return order
 
+    def _before_pickup(self, request_id: str) -> dict[str, JsonValue]:
+        order = self._open_order(request_id)
+        if request_id in self._picked_up:
+            raise FleetbaseOperationError("Order cannot change after pickup")
+        return order
+
     @staticmethod
     def _assigned(order: dict[str, JsonValue], key: str) -> str | None:
         value = order.get(key)
@@ -68,6 +79,44 @@ class InMemoryAdapter:
             native = value.get("id")
             return native if isinstance(native, str) else None
         return None
+
+    @staticmethod
+    def _meta(order: dict[str, JsonValue]) -> dict[str, JsonValue]:
+        meta = order.get("meta")
+        if not isinstance(meta, dict):
+            meta = {}
+            order["meta"] = meta
+        return meta
+
+    def _vehicle_of(self, order: dict[str, JsonValue]) -> str | None:
+        native = self._assigned(order, "vehicle_assigned")
+        reverse = {value: key for key, value in self._vehicles.items()}
+        vehicle_id = reverse.get(native) if native is not None else None
+        if vehicle_id is None or self._assigned(order, "driver_assigned") != self._drivers.get(
+            vehicle_id
+        ):
+            return None
+        return vehicle_id
+
+    @staticmethod
+    def _ranks(order: dict[str, JsonValue]) -> tuple[int | None, int | None]:
+        meta = order.get("meta")
+        route = meta.get("crucible_route") if isinstance(meta, dict) else None
+        if not isinstance(route, dict):
+            return None, None
+        pickup, dropoff = route.get("pickup"), route.get("dropoff")
+        return (
+            pickup if isinstance(pickup, int) else None,
+            dropoff if isinstance(dropoff, int) else None,
+        )
+
+    def _clear(self, order: dict[str, JsonValue]) -> None:
+        order["driver_assigned"] = None
+        order["vehicle_assigned"] = None
+        order["dispatched"] = False
+        if order.get("status") == "dispatched":
+            order["status"] = "created"
+        self._meta(order).pop("crucible_route", None)
 
     async def prepare(self, vehicles: tuple[Vehicle, ...]) -> None:
         for vehicle in vehicles:
@@ -103,16 +152,17 @@ class InMemoryAdapter:
         if vehicle_id not in self._vehicles:
             raise FleetbaseOperationError("Unknown vehicle")
         order = self._open_order(request_id)
-        driver, vehicle = self._drivers[vehicle_id], self._vehicles[vehicle_id]
-        if (
-            self._assigned(order, "driver_assigned") == driver
-            and self._assigned(order, "vehicle_assigned") == vehicle
-        ):
+        if self._vehicle_of(order) == vehicle_id:
             return copy.deepcopy(order)
         if request_id in self._picked_up:
             raise FleetbaseOperationError("Order cannot change after pickup")
-        order["driver_assigned"] = {"id": driver}
-        order["vehicle_assigned"] = {"id": vehicle}
+        top = -1
+        for other in self._orders.values():
+            if other is not order and self._vehicle_of(other) == vehicle_id:
+                top = max([top, *(rank for rank in self._ranks(other) if rank is not None)])
+        order["driver_assigned"] = {"id": self._drivers[vehicle_id]}
+        order["vehicle_assigned"] = {"id": self._vehicles[vehicle_id]}
+        self._meta(order)["crucible_route"] = {"pickup": top + 1, "dropoff": top + 2}
         return copy.deepcopy(order)
 
     async def dispatch_order(self, request_id: str) -> dict[str, JsonValue]:
@@ -126,7 +176,6 @@ class InMemoryAdapter:
         return copy.deepcopy(order)
 
     async def cancel_order(self, request_id: str) -> dict[str, JsonValue]:
-        """Cancel an order before pickup. Not a public tool yet (plan step 2/3)."""
         order = self._order(request_id)
         if request_id in self._cancelled:
             return copy.deepcopy(order)
@@ -134,37 +183,86 @@ class InMemoryAdapter:
             raise FleetbaseOperationError("Order cannot change after pickup")
         self._cancelled.add(request_id)
         order["status"] = "canceled"
+        self._meta(order).pop("crucible_route", None)
         return copy.deepcopy(order)
 
+    async def update_order(
+        self, request_id: str, fields: dict[str, JsonValue]
+    ) -> dict[str, JsonValue]:
+        order = self._open_order(request_id)
+        unknown = set(fields) - _EDITABLE
+        if unknown:
+            raise FleetbaseOperationError("Only note and priority can be updated")
+        self._meta(order).update(copy.deepcopy(fields))
+        return copy.deepcopy(order)
+
+    async def unassign_order(self, request_id: str) -> dict[str, JsonValue]:
+        order = self._before_pickup(request_id)
+        self._clear(order)
+        return copy.deepcopy(order)
+
+    async def set_route(self, vehicle_id: str, stops: list[tuple[str, str]]) -> None:
+        if vehicle_id not in self._vehicles:
+            raise FleetbaseOperationError("Unknown vehicle")
+        ranks: dict[str, dict[str, JsonValue]] = {}
+        for rank, (request_id, action) in enumerate(stops):
+            order = self._open_order(request_id)
+            if self._vehicle_of(order) != vehicle_id:
+                raise FleetbaseOperationError("Order is not assigned to this vehicle")
+            if action not in {"pickup", "dropoff"}:
+                raise FleetbaseOperationError("Unknown stop action")
+            ranks.setdefault(request_id, {})[action] = rank
+        for request_id, route in ranks.items():
+            meta = self._meta(self._orders[request_id])
+            previous = meta.get("crucible_route")
+            merged: dict[str, JsonValue] = dict(previous) if isinstance(previous, dict) else {}
+            merged.update(route)
+            meta["crucible_route"] = merged
+
     async def committed(self) -> dict[str, dict[str, JsonValue]]:
-        reverse = {native: key for key, native in self._vehicles.items()}
         result: dict[str, dict[str, JsonValue]] = {}
         for request_id, order in self._orders.items():
-            if request_id in self._cancelled:
-                result[request_id] = {"vehicle_id": None, "dispatched": False}
-                continue
-            native_vehicle = self._assigned(order, "vehicle_assigned")
-            vehicle_id = reverse.get(native_vehicle) if native_vehicle is not None else None
-            valid_driver = (
-                vehicle_id is not None
-                and self._assigned(order, "driver_assigned") == self._drivers[vehicle_id]
-            )
+            pickup, dropoff = self._ranks(order)
+            cancelled = request_id in self._cancelled
             result[request_id] = {
-                "vehicle_id": vehicle_id if valid_driver else None,
+                "vehicle_id": None if cancelled else self._vehicle_of(order),
                 "dispatched": order.get("dispatched") is True,
+                "cancelled": cancelled,
+                "pickup_rank": pickup,
+                "dropoff_rank": dropoff,
             }
         return result
 
     async def sync_events(self, events: list[PhysicalEvent]) -> None:
         for event in events:
             key = (event.request_id, event.kind)
-            if key in self._synced or event.kind not in _PROGRESS:
+            if key in self._synced:
                 continue
-            order = self._order(event.request_id)
-            self._picked_up.add(event.request_id)
-            if order.get("status") != "completed":
-                order["started"] = True
-                order["status"] = "enroute" if event.kind == "picked_up" else "completed"
+            if event.kind in _PROGRESS:
+                order = self._order(event.request_id)
+                self._picked_up.add(event.request_id)
+                if order.get("status") != "completed":
+                    order["started"] = True
+                    order["status"] = "enroute" if event.kind == "picked_up" else "completed"
+            elif event.kind in {"unassigned", "customer_cancelled", "dropoff_changed"}:
+                order = self._orders.get(event.request_id)
+                if order is None:
+                    continue
+                if event.kind == "unassigned":
+                    # A later breakdown can unassign the same order again.
+                    self._clear(order)
+                    continue
+                if event.kind == "customer_cancelled":
+                    self._cancelled.add(event.request_id)
+                    order["status"] = "canceled"
+                    self._meta(order)["cancelled_by"] = "customer"
+                    self._meta(order).pop("crucible_route", None)
+                else:
+                    self._meta(order)["dropoff"] = copy.deepcopy(event.data.get("dropoff"))
+                    # A changed dropoff can change again; only progress is synced once.
+                    continue
+            else:
+                continue
             self._synced.add(key)
 
     async def snapshot(self) -> dict[str, JsonValue]:

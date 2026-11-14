@@ -12,6 +12,9 @@ from crucible.envs.fleetbase_dispatch.sim import PhysicalEvent
 from crucible.envs.fleetbase_dispatch.world import Request, Vehicle
 
 _JSON = TypeAdapter(JsonValue)
+_PROGRESS = frozenset({"picked_up", "delivered", "delivered_late"})
+_V2_CHANGES = frozenset({"unassigned", "customer_cancelled", "dropoff_changed"})
+_STEP5 = "Native Fleetbase does not support this v2 operation yet (plan step 5)"
 
 __all__ = ["FleetbaseAdapter", "FleetbaseOperationError"]
 
@@ -246,6 +249,24 @@ class FleetbaseAdapter:
             request_id, "PATCH", "/dispatch", None, lambda item: item.get("dispatched") is True
         )
 
+    # v2 operations: ported to native Fleetbase in plan step 5. Until then the native
+    # backend supports only create, assign and dispatch, and fleetbase_dispatch@1 runs
+    # its v2 tools with FLEETBASE_BACKEND=memory.
+
+    async def cancel_order(self, request_id: str) -> dict[str, JsonValue]:
+        raise NotImplementedError(_STEP5)
+
+    async def update_order(
+        self, request_id: str, fields: dict[str, JsonValue]
+    ) -> dict[str, JsonValue]:
+        raise NotImplementedError(_STEP5)
+
+    async def unassign_order(self, request_id: str) -> dict[str, JsonValue]:
+        raise NotImplementedError(_STEP5)
+
+    async def set_route(self, vehicle_id: str, stops: list[tuple[str, str]]) -> None:
+        raise NotImplementedError(_STEP5)
+
     async def committed(self) -> dict[str, dict[str, JsonValue]]:
         result: dict[str, dict[str, JsonValue]] = {}
         reverse = {native: key for key, native in self._vehicles.items()}
@@ -263,13 +284,18 @@ class FleetbaseAdapter:
             result[request_id] = {
                 "vehicle_id": vehicle_id if valid_driver else None,
                 "dispatched": order.get("dispatched") is True,
+                "cancelled": False,
+                "pickup_rank": None,
+                "dropoff_rank": None,
             }
         return result
 
     async def sync_events(self, events: list[PhysicalEvent]) -> None:
         for event in events:
             key = (event.request_id, event.kind)
-            if key in self._synced or event.kind not in {"picked_up", "delivered", "late"}:
+            if event.kind in _V2_CHANGES and event.request_id in self._orders:
+                raise NotImplementedError(_STEP5)
+            if key in self._synced or event.kind not in _PROGRESS:
                 continue
             request_id = event.request_id
             order = await self._read_order(request_id)

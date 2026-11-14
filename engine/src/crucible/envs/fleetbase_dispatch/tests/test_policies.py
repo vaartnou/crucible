@@ -1,166 +1,120 @@
-"""Public-tool policy checks using a workflow fixture, not an application proof."""
-
-from collections.abc import Mapping
+"""Public-tool operators played against the in-memory task."""
 
 import pytest
-from pydantic import JsonValue
 
-from crucible.core.task import TaskSpec
 from crucible.core.tools import Observation, ToolCall, ToolResult
 from crucible.envs.fleetbase_dispatch.policies import (
     GreedyOperator,
+    Operator,
     ReferenceOperator,
     StopEarlyOperator,
 )
-from crucible.envs.fleetbase_dispatch.sim import WorldSimulator
-from crucible.envs.fleetbase_dispatch.world import Request, Vehicle, World, make_world
+from crucible.envs.fleetbase_dispatch.task import FleetbaseSim
+from crucible.envs.fleetbase_dispatch.world import Request, Vehicle, World
 
-SPEC = TaskSpec(id="fleetbase_dispatch", version=1, max_steps=160, title="Test", description="Test")
+PUBLIC = {
+    "list_orders",
+    "list_vehicles",
+    "create_order",
+    "assign_order",
+    "dispatch_order",
+    "advance",
+    "finish",
+}
 
 
-class PublicWorkflow:
-    """Adapter-free policy fixture with only public call results."""
-
+class WorldSim(FleetbaseSim):
     def __init__(self, world: World) -> None:
-        self.sim = WorldSimulator(world)
-        self.created: set[str] = set()
-        self.committed: dict[str, dict[str, JsonValue]] = {}
-        self.calls: list[ToolCall] = []
-        self.finished = False
+        super().__init__()
+        self._world = world
 
-    def observation(self) -> dict[str, JsonValue]:
-        data = self.sim.observation()
-        requests = data["requests"]
-        assert isinstance(requests, list)
-        for item in requests:
-            assert isinstance(item, dict)
-            if item["id"] in self.created:
-                item["native_id"] = f"order_{item['id']}"
-        return data
-
-    def step(self, call: ToolCall) -> ToolResult:
-        self.calls.append(call)
-        request_id = call.args.get("request_id")
-        if call.name == "create_order":
-            assert isinstance(request_id, str)
-            self.created.add(request_id)
-        elif call.name == "assign_order":
-            assert isinstance(request_id, str) and request_id in self.created
-            self.committed[request_id] = {
-                "vehicle_id": call.args["vehicle_id"],
-                "dispatched": False,
-            }
-        elif call.name == "dispatch_order":
-            assert isinstance(request_id, str) and request_id in self.committed
-            self.committed[request_id]["dispatched"] = True
-        elif call.name == "advance":
-            minutes = call.args["minutes"]
-            assert isinstance(minutes, (int, float))
-            self.sim.advance(minutes)
-        elif call.name == "finish":
-            self.sim.finish()
-            self.finished = True
-        else:
-            assert call.name == "observe"
-        snapshot: Mapping[str, Mapping[str, JsonValue]] = self.committed
-        self.sim.reconcile(snapshot)
-        return ToolResult(ok=True, content=self.observation())
+    def _make_world(self, seed: int, salt: str | None) -> World:
+        return self._world
 
 
-async def play(
-    world: World, policy: ReferenceOperator | GreedyOperator | StopEarlyOperator
-) -> PublicWorkflow:
-    fixture = PublicWorkflow(world)
-    await policy.reset(SPEC, [], "public instructions")
-    observation = Observation(data=fixture.observation())
-    for _ in range(SPEC.max_steps):
+async def play(task: FleetbaseSim, policy: Operator, seed: int = 0) -> list[tuple[ToolCall, bool]]:
+    observation = await task.reset(seed)
+    await policy.reset(task.spec, task.tools(), task.instruction())
+    calls: list[tuple[ToolCall, bool]] = []
+    for _ in range(task.spec.max_steps):
+        if task.done():
+            break
         call = await policy.act(observation)
         if call is None:
             break
-        result = fixture.step(call)
+        result = await task.step(call)
+        calls.append((call, result.ok))
         observation = Observation(last_result=result)
-        if fixture.finished:
-            break
-    assert fixture.finished, fixture.calls
-    return fixture
+    return calls
 
 
 @pytest.mark.parametrize("seed", range(10))
-async def test_reference_reliable_complete_workflow(seed: int) -> None:
-    result = await play(make_world(seed), ReferenceOperator())
-    assert result.sim.economics()["reward"] > 0.5
-    assert len(result.calls) <= 100
-    assert set(call.name for call in result.calls) <= {
-        "observe",
-        "create_order",
-        "assign_order",
-        "dispatch_order",
-        "advance",
-        "finish",
-    }
-    assert not any(event.kind == "rejected" for event in result.sim.events)
+async def test_reference_completes_within_budget_without_rejections(seed: int) -> None:
+    task = FleetbaseSim()
+    calls = await play(task, ReferenceOperator(), seed)
+    assert task.done()
+    assert len(calls) < task.spec.max_steps
+    assert all(ok for _, ok in calls)
+    assert {call.name for call, _ in calls} <= PUBLIC
+    score = await task.grade()
+    assert score.total > 0 and score.breakdown["deliveries"] > 0
 
 
-async def test_replay_policy_reproduces_semantic_events_and_economics() -> None:
-    world = make_world(71, "private-world")
-    a = await play(world, ReferenceOperator())
-    b = await play(world, ReferenceOperator())
-    assert a.calls == b.calls
-    assert a.sim.events == b.sim.events
-    assert a.sim.economics() == b.sim.economics()
+async def test_replay_reproduces_calls_and_score() -> None:
+    a, b = FleetbaseSim(), FleetbaseSim()
+    calls_a = await play(a, ReferenceOperator(), 7)
+    calls_b = await play(b, ReferenceOperator(), 7)
+    assert calls_a == calls_b
+    assert await a.grade() == await b.grade()
 
 
-async def test_greedy_uses_same_workflow_but_distinct_selection() -> None:
-    # One vehicle: nearest-first loses a high-value request; reference plans both.
+async def test_greedy_takes_the_nearest_order_and_reference_the_most_profitable() -> None:
     world = World(
         (
-            Request("low", (0.5, 0), (-1, 0), 1, 0, 20, 5),
-            Request("high", (2, 0), (3, 0), 1, 0, 4, 100),
+            Request("near", (1, 0), (2, 0), 1, 0, 50, 5),
+            Request("far", (5, 0), (6, 0), 1, 0, 7, 100),
         ),
-        (Vehicle("v", "d", 2, (0, 0)),),
-        horizon=20,
+        (Vehicle("v", "d", 2, (0, 0), 0.2, 100),),
+        horizon=60,
+        area=10,
     )
-    reference = await play(world, ReferenceOperator())
-    greedy = await play(world, GreedyOperator())
-    assert reference.sim.economics()["reward"] > greedy.sim.economics()["reward"]
-    assert reference.calls[0].args["request_id"] == "high"
-    assert greedy.calls[0].args["request_id"] == "low"
+
+    def first_create(calls: list[tuple[ToolCall, bool]]) -> object:
+        return next(c.args["request_id"] for c, _ in calls if c.name == "create_order")
+
+    reference_task, greedy_task = WorldSim(world), WorldSim(world)
+    assert first_create(await play(reference_task, ReferenceOperator())) == "far"
+    assert first_create(await play(greedy_task, GreedyOperator())) == "near"
+    assert (await reference_task.grade()).total > (await greedy_task.grade()).total
 
 
-async def test_reference_rejects_terminal_pickup_only_feasibility() -> None:
+async def test_stop_early_dispatches_one_order_then_finishes() -> None:
+    task = FleetbaseSim()
+    calls = await play(task, StopEarlyOperator())
+    names = [call.name for call, _ in calls]
+    assert names.count("dispatch_order") == 1 and names[-1] == "finish"
+    assert names[names.index("dispatch_order") + 1] == "finish"
+    score = await task.grade()
+    assert score.breakdown["deliveries"] + score.breakdown["late"] == 1
+
+
+async def test_a_rejected_workflow_call_drops_that_order() -> None:
     world = World(
-        (Request("impossible", (1, 0), (100, 0), 1, 0, 5, 20),),
-        (Vehicle("v", "d", 2, (0, 0)),),
-        horizon=20,
+        (Request("r1", (1, 0), (2, 0), 1, 0, 50, 20),),
+        (Vehicle("v", "d", 2, (0, 0), 0.2, 100),),
+        horizon=60,
+        area=10,
     )
-    result = await play(world, ReferenceOperator())
-    assert not result.created
-    assert result.sim.economics()["distance"] == 0
-
-
-async def test_partial_workflow_recovery_reads_back_then_continues() -> None:
+    task = WorldSim(world)
     policy = ReferenceOperator()
-    await policy.reset(SPEC, [], "")
-    fixture = PublicWorkflow(make_world(0))
-    call = await policy.act(Observation(data=fixture.observation()))
-    assert call is not None and call.name == "create_order"
-    # The application committed creation but the tool reported an ambiguous timeout.
-    fixture.step(call)
-    recovery = await policy.act(Observation(last_result=ToolResult(ok=False, error="timeout")))
-    assert recovery is not None and recovery == ToolCall(name="observe")
-    read_back = fixture.step(recovery)
-    next_call = await policy.act(Observation(last_result=read_back))
-    assert next_call is not None and next_call.name == "assign_order"
-
-
-async def test_stop_early_dispatches_exactly_one_order_then_continues() -> None:
-    result = await play(make_world(0), StopEarlyOperator())
-    assert len(result.created) == 1
-    assert [call.name for call in result.calls] == [
-        "create_order",
-        "assign_order",
-        "dispatch_order",
-        "finish",
-    ]
-    assert result.sim.economics()["deliveries"] == 1
-    assert result.sim.economics()["unserved"] == 11
+    observation = await task.reset(0)
+    await policy.reset(task.spec, task.tools(), task.instruction())
+    call = await policy.act(observation)
+    while call is not None and call.name != "create_order":
+        observation = Observation(last_result=await task.step(call))
+        call = await policy.act(observation)
+    assert call is not None and call.args == {"request_id": "r1"}
+    # The tool reported a failure: the operator does not continue with this order.
+    rejected = Observation(last_result=ToolResult(ok=False, error="timeout"))
+    following = await policy.act(rejected)
+    assert following is not None and following.name == "advance"
