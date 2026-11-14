@@ -32,7 +32,8 @@ Economics
     U = on-time value + late value - sum of per-vehicle driving cost - cancellation fees.
     Late value decays linearly from the full value at the deadline to 0 at
     ``deadline + late_window``. A fee is charged once when the *agent* cancels an order
-    that was ever dispatched. ``reward = clip(U / u_bound, 0, 1)``.
+    that was ever dispatched. ``reward = clip(U / U_hindsight, 0, 1)``, where U_hindsight is
+    the executed utility of the full-knowledge planner (`hindsight.py`).
 """
 
 import math
@@ -772,63 +773,49 @@ class WorldSimulator:
 
     # Economics -----------------------------------------------------------------------
 
-    def upper_bound(self) -> float:
-        """Optimistic utility bound: each request served directly with no driving cost.
-
-        A request counts with its value at the earliest possible delivery (decayed if
-        that is late) unless the customer cancels it before that delivery.
-        """
-        # TODO(step4): replace with hindsight solver
-        cancel_time = {
-            d.request_id: d.time
-            for d in self.world.disruptions
-            if d.kind == "cancellation" and d.request_id is not None
-        }
-        changed = {
-            d.request_id: d.point
-            for d in self.world.disruptions
-            if d.kind == "dropoff_change" and d.request_id is not None and d.point is not None
-        }
-        total = 0.0
-        for request in self.world.requests:
-            start = max(request.release, request.ready_time)
-            trip = math.dist(request.pickup, request.dropoff)
-            new = changed.get(request.id)
-            if new is not None:
-                trip = min(trip, math.dist(request.pickup, new))
-            earliest = start + trip / self.world.speed
-            if earliest > self.world.horizon + EPS:
-                continue
-            if cancel_time.get(request.id, math.inf) < earliest - EPS:
-                continue
-            total += request.value * late_factor(earliest, request.deadline, self.world.late_window)
-        return total
-
-    def economics(self) -> dict[str, float]:
-        """Economic reward from physical records only."""
+    def _value(self) -> tuple[float, float, int, int]:
+        """(on-time value, late value, on-time count, late count) of physical deliveries."""
         on_time = 0.0
         late_value = 0.0
         on_time_count = late_count = 0
         for state in self._requests.values():
             if state.delivery_time is None:
                 continue
-            factor = late_factor(
-                state.delivery_time, state.request.deadline, self.world.late_window
-            )
-            if factor == 1.0 and state.delivery_time <= state.request.deadline + EPS:
+            if state.delivery_time <= state.request.deadline + EPS:
                 on_time += state.request.value
                 on_time_count += 1
             else:
+                factor = late_factor(
+                    state.delivery_time, state.request.deadline, self.world.late_window
+                )
                 late_value += state.request.value * factor
                 late_count += 1
-        driving_cost = sum(
-            v.distance * v.vehicle.cost_per_distance for v in self._vehicles.values()
-        )
+        return on_time, late_value, on_time_count, late_count
+
+    def _driving_cost(self) -> float:
+        return sum(v.distance * v.vehicle.cost_per_distance for v in self._vehicles.values())
+
+    def utility(self) -> float:
+        """U so far: delivered value - driving cost - cancellation fees."""
+        on_time, late_value, _, _ = self._value()
+        fees = self._fees * self.world.cancellation_fee
+        return on_time + late_value - self._driving_cost() - fees
+
+    def economics(self, u_hindsight: float | None = None) -> dict[str, float]:
+        """Economic reward from physical records only.
+
+        `u_hindsight` defaults to the cached hindsight utility of this world.
+        """
+        if u_hindsight is None:
+            from crucible.envs.fleetbase_dispatch.hindsight import hindsight_utility
+
+            u_hindsight = hindsight_utility(self.world)
+        on_time, late_value, on_time_count, late_count = self._value()
+        driving_cost = self._driving_cost()
         distance = sum(v.distance for v in self._vehicles.values())
         fees = self._fees * self.world.cancellation_fee
         utility = on_time + late_value - driving_cost - fees
-        bound = self.upper_bound()
-        reward = min(1.0, max(0.0, utility / bound)) if bound > 0 else 0.0
+        reward = min(1.0, max(0.0, utility / u_hindsight)) if u_hindsight > EPS else 0.0
         states = self._requests.values()
         return {
             "on_time_value": on_time,
@@ -836,7 +823,7 @@ class WorldSimulator:
             "driving_cost": driving_cost,
             "cancellation_fees": fees,
             "utility": utility,
-            "u_bound": bound,
+            "u_hindsight": u_hindsight,
             "reward": reward,
             "deliveries": float(on_time_count),
             "late": float(late_count),

@@ -51,9 +51,9 @@ class WorldConfig:
     urgent_requests: int = 3
     urgent_multiplier: float = 3.0
     urgent_slack: float = 20.0
-    ready_delay_max: float = 15.0
-    deadline_slack_min: float = 20.0
-    deadline_slack_max: float = 60.0
+    ready_delay_max: float = 25.0
+    deadline_slack_min: float = 25.0
+    deadline_slack_max: float = 80.0
     late_window: float = 30.0
     cancellation_fee: float = 8.0
     forecast_grid: int = 3

@@ -75,8 +75,9 @@ def test_delivery_physics_and_economics() -> None:
     assert economics["on_time_value"] == 20
     assert economics["driving_cost"] == pytest.approx(1.2)
     assert economics["utility"] == pytest.approx(18.8)
-    assert economics["u_bound"] == 20
-    assert economics["reward"] == pytest.approx(0.94)
+    # The hindsight planner does exactly this, so the reward is 1.
+    assert economics["u_hindsight"] == pytest.approx(18.8)
+    assert economics["reward"] == pytest.approx(1.0)
     assert economics["deliveries"] == 1 and economics["unserved"] == 0
 
 
@@ -225,7 +226,7 @@ def test_customer_cancellation_before_pickup_is_silent_and_free() -> None:
     assert view is not None and view["cancelled_by"] == "customer"
     economics = sim.economics()
     assert economics["distance"] == 1 and economics["cancellation_fees"] == 0
-    assert economics["customer_cancelled"] == 1 and economics["u_bound"] == 0
+    assert economics["customer_cancelled"] == 1 and economics["u_hindsight"] == 0
     assert economics["reward"] == 0
 
 
@@ -382,13 +383,12 @@ def test_invalid_minutes_and_duplicate_ids_are_rejected() -> None:
 
 
 @pytest.mark.parametrize("seed", range(5))
-def test_generated_worlds_bound_utility(seed: int) -> None:
+def test_generated_worlds_hindsight_beats_a_naive_plan(seed: int) -> None:
     sim = WorldSimulator(make_world(seed))
     released = sim.released_ids()
     assert released and all(rid.startswith("request-") for rid in released)
     sim.reconcile({rid: commit(f"vehicle-{i % 6 + 1}") for i, rid in enumerate(released)})
     sim.finish()
     economics = sim.economics()
-    assert economics["u_bound"] > 0
-    assert economics["on_time_value"] + economics["late_value"] <= economics["u_bound"]
-    assert 0 <= economics["reward"] <= 1
+    assert economics["u_hindsight"] > max(0.0, economics["utility"])
+    assert 0 <= economics["reward"] < 1

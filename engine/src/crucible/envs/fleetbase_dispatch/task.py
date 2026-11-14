@@ -52,13 +52,14 @@ from crucible.envs.fleetbase_dispatch.adapter_protocol import (
 )
 from crucible.envs.fleetbase_dispatch.deployment import make_bundle
 from crucible.envs.fleetbase_dispatch.memory_adapter import InMemoryAdapter
+from crucible.envs.fleetbase_dispatch.policies import EXPLOITS
 from crucible.envs.fleetbase_dispatch.sim import Stop, WorldSimulator
 from crucible.envs.fleetbase_dispatch.world import World, WorldConfig, make_world
 from crucible.export.deployment import DeploymentBundle
 
 BACKEND_ENV = "FLEETBASE_BACKEND"
 PAGE_SIZE = 10
-MAX_STEPS = 300  # Provisional; plan step 4 sets the final budget.
+MAX_STEPS = 530  # The reference uses about 60 % on the dev sweep (docs/fleetbase-validation.md).
 ORDER_STATUSES = (
     "requested",
     "created",
@@ -299,9 +300,10 @@ class DispatchTaskBase(Task):
             "drives costs that vehicle's cost per distance. If you cancel an order that was "
             f"ever dispatched, you pay a fee of {c.cancellation_fee:g}; customer "
             "cancellations cost nothing. Utility U = on-time value + late value - driving "
-            "cost - cancellation fees. Reward = clip(U / U_max, 0, 1), where U_max is a "
-            "private upper bound for the world. Only physical delivery counts; the order "
-            "status in the application is not evidence.\n"
+            "cost - cancellation fees. Reward = clip(U / U_hindsight, 0, 1), where "
+            "U_hindsight is the private utility that a planner reaches in the same world "
+            "when it knows all requests and disruptions in advance. Only physical delivery "
+            "counts; the order status in the application is not evidence.\n"
             "Actions return only the record they changed. Lists return "
             f"{PAGE_SIZE} records per page. Rejected calls change nothing and have no reward "
             f"penalty. You have {self.spec.max_steps} tool calls. finish, or running out of "
@@ -345,7 +347,7 @@ class DispatchTaskBase(Task):
             return frozenset()
         world = self._sim.world
         seen = self._public_time
-        hidden: set[str] = {"u_bound", "silent"}
+        hidden: set[str] = {"u_hindsight", "silent"}
         public: set[str] = {_coords(v.position) for v in world.vehicles}
         for request in world.requests:
             texts = {_coords(request.pickup), _coords(request.dropoff)}
@@ -878,8 +880,8 @@ class FleetbaseSim(DispatchTaskBase):
         ),
         keywords=("logistics", "fleetbase", "simulation"),
     )
-    # The reference pays driving cost, so no policy reaches 1.0 and there is no oracle.
-    checks = TaskChecks(exploit_policies=("stop_early", "greedy"), oracle_perfect=False)
+    # Online play cannot match the hindsight planner, so there is no oracle at 1.0.
+    checks = TaskChecks(exploit_policies=(*EXPLOITS, "stop_early"), oracle_perfect=False)
 
     async def _open_adapter(self, seed: int, salt: str | None) -> DispatchAdapter:
         self._episode_id, adapter = _memory_adapter(seed, salt)

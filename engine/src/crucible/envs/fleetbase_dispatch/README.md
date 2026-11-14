@@ -10,9 +10,10 @@ explicit virtual time. A private simulator reads the committed order records,
 moves the vehicles and applies verified progress back to the records. Application
 status (for example a native `completed`) never earns value by itself.
 
-This is the v2 world ("make it hard" plan, steps 2 and 3). Plan step 4 replaces the
-temporary reward bound with a hindsight solver and tunes the defaults; step 5 ports
-the new operations to native Fleetbase.
+This is the v2 world ("make it hard" plan, steps 2–4): the defaults below are tuned and
+frozen with the policy sweep (see [validation](../../../../../docs/fleetbase-validation.md),
+"v2 heuristic sweep"), and the reward is normalised by a hindsight planner. Plan step 5
+ports the new operations to native Fleetbase.
 
 ## Rules
 
@@ -24,8 +25,8 @@ Defaults:
   (0.15–0.45, larger vehicles cost more) and a shift end (150–240; one vehicle works
   the full horizon). The shift end is on the vehicle record from the start.
 - 40–50 requests in 6 waves (minutes 0, 40, …, 200), horizon 240. Each request has
-  a load (1–4), a value (10–80, spread 8×), a ready time (up to 15 minutes after
-  release) and a deadline (ready time + direct trip + 20–60 minutes).
+  a load (1–4), a value (10–80, spread 8×), a ready time (up to 25 minutes after
+  release) and a deadline (ready time + direct trip + 25–80 minutes).
 - 3 urgent requests with 3× value and a 20-minute slack are released between waves.
 - The service area is sized so that demand is about 1.4× the fleet's shift minutes
   (see the `world.py` docstring for the exact definition).
@@ -64,17 +65,24 @@ Economics:
 - Late delivery earns the value reduced linearly to 0 over `late_window` (30) minutes.
 - Cancelling an order that was *ever* dispatched costs the agent 8 (once per order;
   unassigning first does not avoid it). Customer cancellations cost nothing.
-- `reward = clip(U / u_bound, 0, 1)`. Until plan step 4, `u_bound` is a temporary
-  optimistic bound: every request served directly at its earliest possible time with
-  no driving cost, unless the customer cancels it first.
+- `reward = clip(U / U_hindsight, 0, 1)`. `U_hindsight` (`hindsight.py`, private) is
+  the utility of the reference's route planner when it knows the whole world at t=0:
+  all requests, cancellations, dropoff changes, traffic zones and breakdowns. The plan
+  is executed in a fresh simulator with the real physics (the released prefix of each
+  route is committed every minute; an empty truck may be sent ahead to a pickup that
+  is not released yet, as `reposition_vehicle` allows), so `U_hindsight` is achieved,
+  not estimated. Four planning variants run (one static plan and rolling replans) and
+  the best executed utility counts. It is cached per world. An online policy can in
+  principle beat it (the reward is then clipped to 1); the reference never did on the
+  50 dev seeds.
 - `finish`, policy stop and budget exhaustion continue dispatched work to the
   horizon. Rejected calls have no added penalty. The score breakdown has
   `on_time_value`, `late_value`, `driving_cost`, `cancellation_fees`, `utility`,
-  `u_bound`, `reward` and counts.
+  `u_hindsight`, `reward` and counts.
 
 Tools (`task.py`). Actions return only the record they touched; lists return 10
 records per page. The reset observation has only the time, horizon, counts and
-budget (300 calls, provisional).
+budget (530 calls; the reference uses about 60 % of it on the dev sweep).
 
 | Group | Tools |
 |---|---|
@@ -105,11 +113,24 @@ successful tool result, every disruption ID not announced by then (silent ones a
 never announced), and private field names; the generic no-hidden-state check
 searches every tool result for them.
 
-The reference uses only public tools. Every 10 minutes it reads the vehicles and the
-open orders, then appends orders to the vehicle where they add the most profit per
-minute; greedy gives each idle vehicle the order with the nearest pickup;
-`do_nothing` stops immediately; `stop_early` stops after the first dispatch. Plan
-step 4 adds the strong reference, the policy ladder and the exploit policies.
+Policies (`policies/`, public tools only; registered for both tasks):
+
+| Policy | What it does |
+|---|---|
+| `do_nothing` | Stops at once (generic). |
+| `stop_early` | The reference until its first dispatch, then `finish`. |
+| `fifo` | Each vehicle whose route ends within 10 minutes gets the oldest open order. |
+| `greedy_no_replan` | Nearest pickup, open loop: reads the vehicles once and predicts their availability from its own dispatches; never reads events or dispatched orders. |
+| `greedy_nearest` (alias `greedy`) | Each vehicle whose route ends within 10 minutes gets the open order with the nearest pickup; re-reads vehicles and unassigned orders every epoch. Ignores value, deadlines and cost. |
+| `reference` | Online regret insertion + 2-opt (`policies/solver.py`). Every 5 minutes, when events arrived: polls `list_events`, the vehicles, new and unassigned orders and the in-progress orders (silent changes), plans incrementally and from scratch, keeps the better plan, and applies only the difference (unassign, create/assign/dispatch, `set_vehicle_route`). Counts its calls and keeps a reserve. |
+
+Exploits (each must end cleanly and score below `greedy_nearest`): `one_vehicle`,
+`create_then_cancel`, `reposition_spam`, `estimate_spam` (until the budget runs out),
+`finish_immediately`, `assign_broken_vehicle`, `reroute_after_pickup`.
+`fleetbase_sim@1` names them, with `stop_early`, as its `TaskChecks.exploit_policies`.
+
+`scripts/fleetbase_sweep.py` runs the ladder and the exploits over a `WorldConfig` grid
+on the in-memory backend and checks the gates.
 
 ## Deployment
 
@@ -145,10 +166,8 @@ cooperating clients must share `FLEETBASE_LOCK_DIR` and deployment identity. Do
 not attach to a working installation with other clients. Evaluation concurrency
 must be 1. `FLEETBASE_ARTIFACT_DIR` optionally retains private frozen evidence.
 
-The reference uses only public tools and observations. It plans feasible routes
-with complete pickup and terminal delivery legs; greedy uses the nearest feasible
-request. `do_nothing` stops immediately; `stop_early` stops after the first
-committed dispatch. The same continuation rules apply to every operator.
+The policies above use only public tools and observations, on either backend. The
+same continuation rules apply to every operator.
 
 ## Backends and `fleetbase_sim@1`
 

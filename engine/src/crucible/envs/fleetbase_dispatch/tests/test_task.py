@@ -105,16 +105,17 @@ async def dispatch(task: FleetbaseSim, request_id: str, vehicle_id: str = "v1") 
 def test_tools_and_budget() -> None:
     task = FleetbaseSim()
     assert {t.name for t in task.tools()} == TOOLS
-    assert FleetbaseSim.spec.max_steps == FleetbaseDispatch.spec.max_steps == MAX_STEPS == 300
+    assert FleetbaseSim.spec.max_steps == FleetbaseDispatch.spec.max_steps == MAX_STEPS == 530
     text = task.instruction()
-    assert "300 tool calls" in text and "observe" not in text
+    assert "530 tool calls" in text and "observe" not in text
+    assert "U_hindsight" in text
 
 
 async def test_reset_observation_is_minimal() -> None:
     task = FleetbaseSim()
     observation = await task.reset(0)
     assert set(observation.data) == {"now", "horizon", "released_orders", "vehicles", "budget"}
-    assert observation.data["budget"] == 300 and observation.data["vehicles"] == 6
+    assert observation.data["budget"] == MAX_STEPS and observation.data["vehicles"] == 6
     released = observation.data["released_orders"]
     assert isinstance(released, int) and 0 < released < len(make_world(0).requests)
 
@@ -358,8 +359,10 @@ async def test_grade_continues_dispatched_work_and_evidence_is_frozen() -> None:
     await ok(task, "finish")
     score = await task.grade()
     assert score.breakdown["deliveries"] == 1
-    # The temporary bound counts every request: values 20 + 30 + 10.
-    assert score.total == pytest.approx((20 - 6 * 0.2) / 60)
+    # The hindsight planner serves r1 and r2 in this world, so it earns more.
+    hindsight = score.breakdown["u_hindsight"]
+    assert hindsight > 20 - 6 * 0.2
+    assert score.total == pytest.approx((20 - 6 * 0.2) / hindsight)
     assert await task.grade() == score
     evidence = task.grading_evidence()
     evidence["events"] = []
