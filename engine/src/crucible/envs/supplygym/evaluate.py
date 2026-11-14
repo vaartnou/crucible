@@ -29,7 +29,11 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--split", choices=sorted(SPLITS), default="dev")
     ap.add_argument("--n", type=int, default=0, help="first n seeds of the split (0 = all)")
-    ap.add_argument("--task", choices=["supplygym@1", "supplygym-fresh@1"], default="supplygym@1")
+    ap.add_argument(
+        "--task",
+        choices=["supplygym@1", "supplygym-fresh@1", "supplygym-cala@1"],
+        default="supplygym@1",
+    )
     ap.add_argument("--policies", default="ss,reference,stop_early,do_nothing,max_expedite")
     ap.add_argument("--repeats", type=int, default=1)
     ap.add_argument("--concurrency", type=int, default=4)

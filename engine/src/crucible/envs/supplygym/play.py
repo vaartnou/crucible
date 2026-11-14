@@ -7,6 +7,8 @@ from typing import Any
 
 import numpy as np
 
+from crucible.envs.supplygym.cala_sim import CalaSupplyEnv
+from crucible.envs.supplygym.cala_world import make_cala_world
 from crucible.envs.supplygym.sim import ACT_DIM, SupplyEnv
 from crucible.envs.supplygym.state import (
     alternative_error,
@@ -22,6 +24,7 @@ REGIMES: dict[int, dict[str, float | int]] = {
     0: {"world_seed": 7, "rate_scale": 1.0, "price_lo": 9.6, "price_hi": 10.4},
     1: {"world_seed": 11, "rate_scale": 1.5, "price_lo": 9.0, "price_hi": 11.0},
 }
+CALA_REGIME = 2
 
 # Seed ranges, [lo, hi). Training seeds are for the external trainer only; the others are used for
 # evaluation. A test asserts they do not overlap.
@@ -47,10 +50,13 @@ class Play:
     """A simulator, its public signal log and the controls API."""
 
     def __init__(self, seed: int, regime: int = 0, salt: str = "", signals: str = "full") -> None:
-        if regime not in REGIMES:
-            raise ValueError(f"unknown regime {regime}; known: {sorted(REGIMES)}")
         self.seed, self.regime = seed, regime
-        self.env = SupplyEnv(signals=signals, salt=salt, **REGIMES[regime])  # type: ignore[arg-type]
+        if regime == CALA_REGIME:
+            self.env = CalaSupplyEnv(signals=signals, salt=salt, world=make_cala_world())
+        elif regime in REGIMES:
+            self.env = SupplyEnv(signals=signals, salt=salt, **REGIMES[regime])  # type: ignore[arg-type]
+        else:
+            raise ValueError(f"unknown regime {regime}; known: {[*REGIMES, CALA_REGIME]}")
         self.env.reset(seed=seed)
         self.log: list[dict[str, Any]] = []
         self.weeks = 0
@@ -88,8 +94,11 @@ class Play:
         # what the default controls would have earned this week, from the same state and the same
         # realised demand: only the week that has just been played, so nothing about the future
         alt = copy.copy(env)
-        alt.__dict__ = {k: copy.deepcopy(v) for k, v in env.__dict__.items() if k != "tape"}
-        alt.tape = env.tape
+        # World and tape are read-only during a rollout. Copy all order, inventory,
+        # signal and accounting state before evaluating the counterfactual.
+        alt.__dict__ = {
+            k: v if k in ("world", "tape") else copy.deepcopy(v) for k, v in env.__dict__.items()
+        }
         alt.step(np.zeros(ACT_DIM))
         _, _, _, _, info = env.step(a)
         for item in info["news"] + info["rumors"] + info["updates"]:

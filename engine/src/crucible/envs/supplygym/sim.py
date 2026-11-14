@@ -53,9 +53,10 @@ class SupplyEnv:
         salt: str = "",
         price_lo: float = 9.6,
         price_hi: float = 10.4,
+        world: World | None = None,
     ):
         assert signals in ("full", "no_news", "none", "placebo")
-        self.world = make_world(world_seed, price_lo, price_hi)
+        self.world = world if world is not None else make_world(world_seed, price_lo, price_hi)
         self.salt = salt
         self.rate_scale, self.k, self.signals, self.horizon = (
             rate_scale,
@@ -173,6 +174,12 @@ class SupplyEnv:
         return a
 
     # ------------------------------------------------------------------ daily dynamics
+    def regular_receipt(self, supplier, nominal, delay):
+        return nominal, nominal + delay
+
+    def reported_arrival(self, order):
+        return order["arr"]
+
     def _place_orders(self, ctrl, day_costs):
         act = self.active()
         bw = self._base_w(act)
@@ -223,11 +230,12 @@ class SupplyEnv:
                         ordered=0,
                     )
                 )
+            booked, arrival = self.regular_receipt(i, nominal, delay)
             self.orders.append(
                 dict(
                     sup=int(i),
-                    arr=nominal + delay,
-                    nom=nominal,
+                    arr=arrival,
+                    nom=booked,
                     rev=min(nominal, d + ACK_DAYS),
                     qty=qn,
                     ordered=q - qe if qe else q,
@@ -407,7 +415,7 @@ class SupplyEnv:
             units = sum(o["ordered"] if d < o["rev"] else o["qty"] for o in pend) / (
                 dl * max(1, self.lead[i]) / 3.0
             )
-            nxt = min([o["arr"] - d for o in pend], default=30) / 30.0
+            nxt = min([self.reported_arrival(o) - d for o in pend], default=30) / 30.0
             late = sum(1 for o in pend if o["nom"] < d) / 5.0 if self.use_ops else 0.0
             risk = self.risk[i] if self.use_ops else 0.0
             # fill signal: share of nominal-ETA-passed orders still outstanding is exposed via `late`

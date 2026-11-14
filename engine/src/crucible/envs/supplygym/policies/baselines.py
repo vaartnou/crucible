@@ -5,6 +5,7 @@
 """
 
 import json
+import math
 from collections.abc import Callable
 from typing import Any
 
@@ -16,7 +17,7 @@ from crucible.envs.supplygym.policies.views import call, parse_status
 
 SUPPLIERS = [f"S{k:02d}" for k in range(1, 11)]
 # Both regimes share their policies; the reference was trained on `supplygym` only.
-TASK_IDS = ("supplygym", "supplygym-fresh")
+TASK_IDS = ("supplygym", "supplygym-fresh", "supplygym-cala")
 
 
 def _register[T](name: str) -> Callable[[T], T]:
@@ -109,3 +110,23 @@ class Reference(_Loop):
 
     def _make(self) -> Decider:
         return make_decider("ppo")
+
+
+@register_policy("availability", "supplygym-cala")
+class Availability(_Loop):
+    """Diagnostic reallocation using acknowledged fill and the public risk score."""
+
+    name = "availability"
+
+    def _make(self) -> Decider:
+        return self
+
+    def decide(self, status: dict[str, Any]) -> dict[str, Any]:
+        weights = {}
+        for supplier in status["suppliers"]:
+            if supplier["kind"] == "direct":
+                fill = max(0.1, min(1.0, supplier["fill_ratio"]))
+                risk_estimate = 1.0 - (supplier["risk"] - 0.15) / 0.7
+                availability = (fill + max(0.1, min(1.0, risk_estimate))) / 2.0
+                weights[supplier["id"]] = max(math.exp(-4), availability**2)
+        return {"supplier_weights": weights}

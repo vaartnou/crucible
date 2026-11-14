@@ -4,6 +4,7 @@ Importing this package registers the task and its policies.
 """
 
 from crucible.envs.supplygym import policies
+from crucible.envs.supplygym.cala_task import SupplyGymCalaTask
 from crucible.envs.supplygym.task import SupplyGymFreshTask, SupplyGymTask
 
-__all__ = ["SupplyGymFreshTask", "SupplyGymTask", "policies"]
+__all__ = ["SupplyGymCalaTask", "SupplyGymFreshTask", "SupplyGymTask", "policies"]

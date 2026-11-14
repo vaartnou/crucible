@@ -14,6 +14,31 @@ scores, late orders and fill ratios. Synthetic supplier graph; not real data.
 | Regimes | `supplygym`: the calibration the reward and reference were tuned on. `supplygym-fresh`: other supplier graph, wider price spread, 1.5x disruption rate |
 | Seed splits | train 20000-21999 (external trainer only), dev 1000-1029, held-out 10000-10049, fresh 30000-30049 |
 
+## Cala world
+
+`supplygym-cala@1` models one electronics unit sourced from 10 incumbents and two
+backups. The Cala project’s public disclosure snapshot supplies 12 historical
+supplier-to-buyer links and 156 operating-site observations across 20 countries.
+A disruption in one region can cut deliveries from several suppliers, including
+suppliers whose largest operating exposure is elsewhere.
+
+The modeled SKU, supplier roles, site output shares, contracts, port exposure,
+and incidents are synthetic. A fixed world seed sets the terms and freight slots.
+Regular shipments arrive on a four-day cycle. An interruption can miss the booked
+slot, while expedited freight bypasses consolidation. The buyer starts with
+prepaid shipments already on order. The briefing lists the slots, and status
+reports booked arrival times. Site-level losses stay hidden.
+
+Run `python -m crucible.envs.supplygym.evaluate --task supplygym-cala@1 --split heldout --policies reference,availability`
+from the engine environment. The `availability` diagnostic changes order shares using
+public fill ratios and risk. Selected on eight training seeds, it beats the default on
+34 of 50 held-out seeds, averaging $1,088 more profit (paired 95% bootstrap interval
+$507 to $1,710). The frozen PPO wins 15 of 50 held-out seeds and averages
+$2,116 below the default (paired bootstrap 95% interval −$3,369 to −$1,027). Inspect
+raw profit alongside reward because the denominator uses its $1,000 floor when PPO
+underperforms. See the [source and field mapping](../../../../../docs/supplygym/CALA_DATA_NOTES.md)
+and [baseline system map](../../../../../docs/supplygym/SYSTEM_MAP.md).
+
 ## Tools
 
 | Tool | Kind | Effect |

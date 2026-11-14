@@ -255,7 +255,11 @@ and advance one week; omitted fields keep their value; refused calls change noth
 You have {MAX_STEPS} tool calls. Stopping early, or never calling set_controls, leaves the \
 remaining weeks on the default rule.
 
-Scoring (0 to 1): your year's profit is compared with the default rule on the same year \
+{self._scoring_instruction()}"""
+
+    def _scoring_instruction(self) -> str:
+        return f"""Scoring (0 to 1): your year's profit is compared with the default rule \
+on the same year \
 (0 = no better, which is also what stopping early or doing nothing earns) and with a strong \
 reference agent that sees the same information as you (1 = as good as the reference). Costs \
 count: expedite is ${EXPEDITE_COST:g} per unit; an alternative costs the fee plus a higher \

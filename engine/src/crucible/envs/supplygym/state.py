@@ -50,7 +50,7 @@ def build_status(
         node = env.world.nodes[i]
         pend = [o for o in env.orders if o["sup"] == i]
         pending = sum(o["ordered"] if d < o["rev"] else o["qty"] for o in pend)
-        nxt = min((o["arr"] - d for o in pend), default=None)
+        nxt = min((env.reported_arrival(o) - d for o in pend), default=None)
         if i in act:
             state, left = "active", 0
         elif i in env.approved:
