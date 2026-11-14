@@ -26,7 +26,22 @@ def supplier_id(env: SupplyEnv, i: int) -> str:
     return str(env.world.nodes[i]["id"])
 
 
-def build_status(env: SupplyEnv, signals: list[dict[str, Any]]) -> dict[str, Any]:
+def status_controls(env: SupplyEnv) -> dict[str, Any]:
+    """Standing controls as the agent sees them, after clipping to what the simulator applies."""
+    c = env.ctrl
+    return {
+        "supplier_weights": {
+            supplier_id(env, i): _r(math.exp(4.0 * float(c[i]))) for i in range(env.NS)
+        },
+        "safety_stock_days": _r(3.0 * max(0.0, float(c[13]))),
+        "order_multiplier": _r(math.exp(0.5 * float(c[12]))),
+        "expedite_fraction": _r(0.3 * max(0.0, float(c[14]))),
+    }
+
+
+def build_status(
+    env: SupplyEnv, signals: list[dict[str, Any]], ledger: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """Public state at the current decision point."""
     d = env.day
     act = set(env.active())
@@ -76,9 +91,7 @@ def build_status(env: SupplyEnv, signals: list[dict[str, Any]]) -> dict[str, Any
             "rumors_medium": med,
         }
     s_lvl, _ = env.levels(list(act), 0)
-    c = env.ctrl
-    weights = {supplier_id(env, i): _r(math.exp(4.0 * float(c[i]))) for i in range(env.NS)}
-    return {
+    out = {
         "day": d,
         "weeks_left": max(0, math.ceil((env.horizon - d) / env.k)),
         "onhand": _r(env.onhand),
@@ -87,14 +100,12 @@ def build_status(env: SupplyEnv, signals: list[dict[str, Any]]) -> dict[str, Any
         "suppliers": sups,
         "regions": regions,
         "signals": [s for s in signals if d - s["day"] <= SIGNAL_DAYS],
-        "controls": {
-            "supplier_weights": weights,
-            "safety_stock_days": _r(3.0 * max(0.0, float(c[13]))),
-            "order_multiplier": _r(math.exp(0.5 * float(c[12]))),
-            "expedite_fraction": _r(0.3 * max(0.0, float(c[14]))),
-        },
+        "controls": status_controls(env),
         "profit_so_far": _r(env.tot["profit"]),
     }
+    if ledger is not None:
+        out["last_week"] = ledger
+    return out
 
 
 def next_alternative(env: SupplyEnv) -> str | None:

@@ -177,3 +177,55 @@ def test_out_of_range_controls_are_refused_not_clamped(bad: dict[str, Any]) -> N
 
     with pytest.raises(ValidationError):
         ControlsArgs.model_validate(bad)
+
+
+def test_weekly_ledger_reports_realised_costs_and_the_default_counterfactual() -> None:
+    p = Play(1000, 0)
+    assert "last_week" not in p.status()
+    p.apply({})
+    ledger = p.status()["last_week"]
+    assert ledger["delta_vs_default"] == 0.0  # default controls against themselves
+    assert ledger["controls_changed"] == 0
+    p.apply({"expedite_fraction": 0.3})
+    ledger = p.status()["last_week"]
+    assert ledger["expedite"] > 0 and ledger["controls_changed"] == 1
+    assert ledger["previous_controls"]["expedite_fraction"] == 0.0
+    assert ledger["delta_vs_default"] < 0  # paying the expedite premium cost money this week
+    parts = ledger["revenue"] - sum(
+        ledger[k] for k in ("supplier_cost", "expedite", "holding", "lost_sales")
+    )
+    assert parts == pytest.approx(ledger["profit"], abs=0.05)
+    json.dumps(ledger)  # plain JSON values only
+
+
+def test_ledger_does_not_leak_the_future_or_change_the_game() -> None:
+    """The counterfactual is a throw-away copy: playing with and without it is identical."""
+    a, b = Play(1001, 0), Play(1001, 0)
+    for _ in range(10):
+        a.apply({"order_multiplier": 1.1})
+        b.apply({"order_multiplier": 1.1})
+    assert a.env.summary()["profit"] == b.env.summary()["profit"]
+    a.run_default()
+    b2 = Play(1001, 0)
+    for _ in range(10):
+        b2.apply({"order_multiplier": 1.1})
+    b2.run_default()
+    assert a.env.summary()["profit"] == b2.env.summary()["profit"]
+
+
+def test_ledger_does_not_turn_the_task_into_playing_all_zeros(tmp_path: Path) -> None:
+    """Following the ledger (undo any week that lost to the default) still cannot beat zero reward
+    by doing nothing: all-zero controls stay at exactly 0 and the reference is unaffected."""
+    for seed in SEEDS:
+        r = run("ss", seed, tmp_path)
+        assert r.score.total == 0.0
+
+
+def test_reference_decisions_ignore_the_ledger() -> None:
+    p = Play(1002, 0)
+    decider = make_decider("ppo")
+    for _ in range(4):
+        p.apply(decider.decide(p.status()))
+    s = p.status()
+    no_ledger = {k: v for k, v in s.items() if k != "last_week"}
+    assert decider.decide(s) == decider.decide(no_ledger)

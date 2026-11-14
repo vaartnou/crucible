@@ -56,6 +56,7 @@ class StatusView(BaseModel):
     signals: list[dict[str, JsonValue]]
     controls: dict[str, JsonValue]
     profit_so_far: float
+    last_week: dict[str, JsonValue] | None = None
 
 
 def parse_status(result: ToolResult) -> StatusView:
