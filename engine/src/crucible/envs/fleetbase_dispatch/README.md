@@ -13,8 +13,8 @@ status (for example a native `completed`) never earns value by itself.
 This is the v2 world ("make it hard" plan, steps 2–4): the defaults below are tuned and
 frozen with the policy sweep (see [validation](../../../../../docs/fleetbase-validation.md),
 "v2 heuristic sweep"), and the reward is normalised by a hindsight planner. Plan step 5
-ported the new operations to native Fleetbase; that port is verified offline only (see
-"Deployment" and "Track C" below).
+ported the new operations to native Fleetbase; Track C confirmed that port on a live
+stack (see "Deployment" and "Track C" below).
 
 ## Rules
 
@@ -141,10 +141,12 @@ unassign by clearing `driver`/`vehicle`, several orders per driver, and world ch
 mirrored into native records (customer cancellation cancels the order, a dropoff
 change moves the dropoff place, a breakdown unassigns, and breakdown/repair/shift end
 set the vehicle status). Native Fleetbase has no stop sequencing and no un-dispatch,
-so route ranks and an un-dispatch marker live in `meta`. The endpoints beyond the v1
-audit are **unverified against a live stack**: see the audit's "v2 operations"
-section for each assumption. `deployment/native-proof.php` probes them, and the smoke
-runner below runs it first.
+so route ranks and an un-dispatch marker live in `meta`. Native vehicle status is a
+validated enum without an off-shift value, so the vehicle's world state (`available`,
+`broken`, `off_shift`) is in vehicle `meta.crucible_state` and native status is
+`available` or `out_of_service`. The endpoints beyond the v1 audit were verified on a
+live stack in Track C: see the audit's "v2 operations" section for each assumption.
+`deployment/native-proof.php` probes them, and the smoke runner below runs it first.
 
 See [the native audit](../../../../../docs/fleetbase-api-audit.md) for immutable
 image/source pins and audited endpoints. The private bundle starts MySQL, Redis,
@@ -202,10 +204,12 @@ adapter-level script compares `committed()` and rejections step by step with mem
 The live half runs only with `FLEETBASE_URL`, `FLEETBASE_TOKEN`,
 `FLEETBASE_DEPLOYMENT_ID` and `FLEETBASE_EXCLUSIVE=1`.
 
-### Track C: what still needs a live stack
+### Track C: live stack checks
 
 The fake proves the adapter logic against the documented contract, not that the pinned
-Fleetbase behaves as documented. Track C must show, on a real stack:
+Fleetbase behaves as documented. Track C shows, on a real stack (items 1–4 are recorded in
+[validation](../../../../../docs/fleetbase-validation.md), "v2 native confirmation";
+item 5 is the pilot):
 
 1. The native contract probe passes (`native-proof.php`, every v2 assumption), followed
    by a clean `count-state.php`.

@@ -186,6 +186,9 @@ def main() -> None:
             ],
         )
         if args.harbor:
+            # One Fleetbase stack at a time (about 4 GB each): the local stack goes down
+            # before Harbor starts its own. The finally block's teardown is then a no-op.
+            run("local-teardown", [*compose, "down", "--volumes", "--remove-orphans"])
             version = run("harbor-version", ["harbor", "--version"]).strip()
             if version != "0.26.0":
                 raise RuntimeError(f"expected pinned Harbor 0.26.0, found {version}")

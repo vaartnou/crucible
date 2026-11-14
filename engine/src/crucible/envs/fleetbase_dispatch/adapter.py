@@ -15,6 +15,10 @@ v2 state that native Fleetbase does not model lives in the order's ``meta``
   dispatch (which Fleetbase rejects).
 - ``note``, ``priority``, ``cancelled_by`` and ``dropoff``, as in the memory backend.
 
+The vehicle's ``meta.crucible_state`` (``available``, ``broken``, ``off_shift``) holds the
+world state, because native vehicle ``status`` is a validated enum without an off-shift
+value; both unavailable states set native ``out_of_service``.
+
 Keys are cleared by writing ``null``, so the result is the same whether the native
 ``PUT`` replaces or merges ``meta``. Guards that native Fleetbase may not enforce
 (changes after pickup, changes to a cancelled order) are checked here, as in the memory
@@ -38,8 +42,11 @@ _V2_CHANGES = frozenset({"unassigned", "customer_cancelled", "dropoff_changed"})
 _VEHICLE_EVENTS = frozenset({"breakdown", "repaired", "shift_ended"})
 _EDITABLE = frozenset({"note", "priority"})
 CANCELLED = "canceled"  # native spelling
-# Native vehicle status is a free string; these values are this adapter's convention.
-VEHICLE_AVAILABLE, VEHICLE_BROKEN, VEHICLE_OFF_SHIFT = "available", "out_of_service", "inactive"
+# Native vehicle status is a validated enum (CreateVehicleRequest::STATUSES) with no
+# off-shift value, so both unavailable states use native ``out_of_service`` and the exact
+# state lives in vehicle ``meta.crucible_state`` (live-verified, see the audit doc).
+VEHICLE_AVAILABLE, VEHICLE_UNAVAILABLE = "available", "out_of_service"
+STATE_AVAILABLE, STATE_BROKEN, STATE_OFF_SHIFT = "available", "broken", "off_shift"
 
 __all__ = ["FleetbaseAdapter", "FleetbaseOperationError"]
 
@@ -486,17 +493,26 @@ class FleetbaseAdapter:
             flags.discard("broken")
         else:
             flags.add("off_shift")
-        status = (
-            VEHICLE_OFF_SHIFT
+        state = (
+            STATE_OFF_SHIFT
             if "off_shift" in flags
-            else VEHICLE_BROKEN
+            else STATE_BROKEN
             if "broken" in flags
-            else VEHICLE_AVAILABLE
+            else STATE_AVAILABLE
         )
+        status = VEHICLE_AVAILABLE if state == STATE_AVAILABLE else VEHICLE_UNAVAILABLE
+
+        def done(item: dict[str, JsonValue]) -> bool:
+            meta = item.get("meta")
+            return (
+                item.get("status") == status
+                and isinstance(meta, dict)
+                and meta.get("crucible_state") == state
+            )
+
         path = "vehicles/" + self._vehicles[vehicle_id]
-        await self._mutate_record(
-            path, "PUT", path, {"status": status}, lambda item: item.get("status") == status
-        )
+        body: dict[str, JsonValue] = {"status": status, "meta": {"crucible_state": state}}
+        await self._mutate_record(path, "PUT", path, body, done)
 
     async def _sync_change(self, event: PhysicalEvent) -> None:
         request_id = event.request_id

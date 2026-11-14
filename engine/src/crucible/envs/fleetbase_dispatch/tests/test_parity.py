@@ -84,14 +84,22 @@ PRELUDE = (
 )
 
 
+# Live-verified subset of native CreateVehicleRequest::STATUSES used or refused here.
+VEHICLE_STATUSES = frozenset({"active", "available", "in_use", "maintenance", "out_of_service"})
+
+
 class FakeFleetbase:
     """In-process HTTP fake of the native contract in docs/fleetbase-api-audit.md.
 
-    It models the audited v1 endpoints and the documented, live-unverified v2
+    It models the audited v1 endpoints and the live-verified v2
     assumptions: ``PUT /v1/orders/:id`` sets only the keys it receives (``driver`` /
     ``vehicle`` null clears the assignment, ``meta`` replaces the whole object, and
     ``dispatched`` cannot be reset), ``DELETE /v1/orders/:id/cancel`` sets status
     ``canceled``, and ``PUT /v1/{places,vehicles}/:id`` updates the given attributes.
+    native-proof.php checked these on a live stack (Track C); whether native replaces or
+    merges ``meta`` is not checked and does not matter, because the adapter always sends
+    the full meta. As live, vehicle ``status`` is validated against the native enum
+    (``inactive`` is refused with HTTP 422).
 
     With ``fail_every`` set, every n-th mutation other than a resource delete commits
     and then answers HTTP 500, like the audited notification failure, so each operation
@@ -156,6 +164,9 @@ class FakeFleetbase:
         if resource != "orders":
             if request.method != "PUT" or action is not None:
                 return httpx.Response(405, json={"error": "method not allowed"})
+            if resource == "vehicles" and body.get("status", "available") not in VEHICLE_STATUSES:
+                # Live: native validates vehicle status (CreateVehicleRequest::STATUSES).
+                return httpx.Response(422, json={"error": "The selected status is invalid."})
             record |= body
             return httpx.Response(200, json=record)
         if request.method == "PUT" and action is None:
@@ -337,8 +348,12 @@ async def test_native_world_changes_mirror_into_records(trace: list[ToolCall]) -
         assert sum(meta.get("cancelled_by") == "customer" for meta in metas) >= 1
         assert any(isinstance(meta.get("dropoff"), list) for meta in metas)
         assert sum(order["status"] == "canceled" for order in orders) >= 2
-        statuses = [vehicle["status"] for vehicle in fake.records["vehicles"].values()]
-        assert "inactive" in statuses
+        vehicles = fake.records["vehicles"].values()
+        metas = [v["meta"] for v in vehicles if isinstance(v.get("meta"), dict)]
+        assert any(
+            meta.get("crucible_state") == "off_shift" for meta in metas if isinstance(meta, dict)
+        )
+        assert all(v["status"] in ("available", "out_of_service") for v in vehicles)
         await task.aclose()
     assert not any(fake.records.values())
 

@@ -15,6 +15,15 @@ function api($method, $path, $body=null, $headers=[]) {
  echo json_encode(['method'=>$method,'path'=>$path,'http'=>$status,'id'=>$data['id']??null,'status'=>$data['status']??null,'dispatched'=>$data['dispatched']??null])."\n";
  return $data;
 }
+function status_of($method, $path, $body) {
+ global $token;
+ $ch=curl_init('http://127.0.0.1:8000/v1'.$path);
+ curl_setopt_array($ch,[CURLOPT_RETURNTRANSFER=>true,CURLOPT_CUSTOMREQUEST=>$method,CURLOPT_HTTPHEADER=>['Authorization: Bearer '.$token,'Content-Type: application/json','Accept: application/json'],CURLOPT_TIMEOUT=>30]);
+ if($body!==null) curl_setopt($ch,CURLOPT_POSTFIELDS,json_encode($body));
+ curl_exec($ch); $status=curl_getinfo($ch,CURLINFO_HTTP_CODE);
+ echo json_encode(['method'=>$method,'path'=>$path,'http'=>$status,'expected_failure'=>true])."\n";
+ return $status;
+}
 function check($ok, $assumption) {
  echo json_encode(['assumption'=>$assumption,'holds'=>(bool)$ok])."\n";
  if(!$ok){fwrite(STDERR,"v2 assumption failed: $assumption\n");exit(2);}
@@ -94,13 +103,17 @@ api('PUT','/places/'.$orders[3]['dropoff'],['latitude'=>60.19,'longitude'=>24.96
 $place=api('GET','/places/'.$orders[3]['dropoff']);
 $coords=$place['location']['coordinates']??[$place['longitude']??null,$place['latitude']??null];
 check(abs(($coords[1]??0)-60.19)<1e-7 && abs(($coords[0]??0)-24.96)<1e-7, 'PUT /places/:id moves the place');
-foreach(['out_of_service','inactive','available'] as $status){
- api('PUT','/vehicles/'.$vehicle['id'],['status'=>$status]);
+// Native vehicle status is a validated enum without an off-shift value (an earlier run
+// got 422 for 'inactive'), so the adapter keeps the world state in vehicle meta.
+check(status_of('PUT','/vehicles/'.$vehicle['id'],['status'=>'inactive'])===422, 'PUT /vehicles/:id rejects status inactive (422)');
+foreach([['out_of_service','broken'],['out_of_service','off_shift'],['available','available']] as [$status,$state]){
+ api('PUT','/vehicles/'.$vehicle['id'],['status'=>$status,'meta'=>['crucible_state'=>$state]]);
  $read=api('GET','/vehicles/'.$vehicle['id']);
- check(($read['status']??null)===$status, 'PUT /vehicles/:id status '.$status);
+ check(($read['status']??null)===$status && ($read['meta']['crucible_state']??null)===$state, 'PUT /vehicles/:id status '.$status.' with meta crucible_state '.$state);
 }
 
 foreach($orders as $item) api('DELETE','/orders/'.$item['id']);
+check(status_of('GET','/orders/'.$a,null)===404, 'DELETE /orders/:id removes a cancelled order');
 foreach($places as $place_id) api('DELETE','/places/'.$place_id);
 api('DELETE','/vehicles/'.$vehicle['id']);
 api('DELETE','/drivers/'.$driver['id']);
