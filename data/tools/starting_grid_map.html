@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Starting grid | SupplyGym</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>body{margin:0;color:#162d28;background:#f2f5ef;font:16px system-ui}header{padding:14px 24px}h1{font-size:24px;margin:0}p{margin:4px 0}#map{height:72vh}details{padding:10px 24px}table{border-collapse:collapse}td,th{text-align:left;padding:4px 12px}</style>
+<header><h1>SupplyGym starting grid</h1><p id="caption"></p></header>
+<div id="map" aria-label="Map of cited city-level locations"></div>
+<details><summary>Mapped locations</summary><table><thead><tr><th>Alias</th><th>Latitude</th><th>Longitude</th></tr></thead><tbody></tbody></table></details>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const points = GRID_MARKERS;
+document.querySelector('#caption').textContent = points.length + ' locations with cited city coordinates. Select a marker to see its alias.';
+for (const [lat,lon,alias] of points) {
+  const row=document.querySelector('tbody').insertRow();
+  for (const val of [alias,lat,lon]) row.insertCell().textContent=val;
+}
+if(window.L){
+  const map=L.map('map').setView([52,14],4);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; OpenStreetMap contributors',maxZoom:15}).addTo(map);
+  const groups=new Map();
+  for(const [lat,lon,alias] of points){
+    const key=lat+','+lon;
+    if(!groups.has(key))groups.set(key,{lat,lon,aliases:[]});
+    groups.get(key).aliases.push(alias);
+  }
+  for(const {lat,lon,aliases} of groups.values()){
+    const label=document.createElement('span');label.textContent=aliases.join(', ');
+    L.circleMarker([lat,lon],{radius:7,color:'#12584f',fillOpacity:.8}).bindPopup(label).addTo(map);
+  }
+  if(points.length)map.fitBounds(points.map(p=>p.slice(0,2)),{padding:[24,24],maxZoom:6});
+}else{
+  document.querySelector('#map').textContent='Map tiles and Leaflet require an internet connection. The locations table is available offline.';
+  document.querySelector('details').open=true;document.querySelector('#map').style.height='auto';
+}
+</script></html>

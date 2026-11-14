@@ -1,0 +1,13 @@
+{
+  "reasons": {
+    "conflicting or unsafe context": 2,
+    "entity address unresolved or uncited": 3,
+    "entity without structured headquarters": 22,
+    "no row-level URL": 569,
+    "port identity not a city match": 3,
+    "registry and claim conflict": 8,
+    "registry identity or location mismatch": 21,
+    "requires source review": 113
+  },
+  "unit": "structured rows excluded"
+}

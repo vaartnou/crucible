@@ -1,0 +1,20 @@
+grid_fdce9cc06b86c4c3  Busan | port | Busan, KR | https://service.unece.org/trade/locode/kr.htm, https://www.geonames.org/1838524/
+grid_106ead2dc54c8666  Company-8eee63334b5527 | hq | Trostberg, DE | https://search.gleif.org/#/record/8945004EL7WZK3ERG181
+grid_a673e250f1938d9c  Port Klang | port | Klang, MY | https://service.unece.org/trade/locode/my.htm, https://www.geonames.org/1732905/
+grid_c5605946e181faac  Company-02e0c9d3c00d75 | hq | Holzminden, DE | https://search.gleif.org/#/record/529900D82I6R9601CF26
+grid_b6827c3a891e9860  Company-993879039de62d | hq | Valby, DK | https://search.gleif.org/#/record/213800G7EG4156NNPG91
+grid_411ccf2b57e1ddbd  Riga | port | Riga, LV | https://service.unece.org/trade/locode/lv.htm, https://www.geonames.org/456172/
+edge_5e5aea558617d750  supplies | Company-07b780075ef626 to Company-1cfa3119ca9035 |   | https://newsroom.st.com/media-center/press-item.html/c3252.html
+grid_15b976349aa20ac6  Ajos | port | Kemi, FI | https://service.unece.org/trade/locode/fi.htm, https://www.metsagroup.com/metsafibre/news-and-publications/news-and-releases/stories/2023/learn-more-about-operations-at-kemi-bioproduct-mill
+grid_4824d6e3875c9ed6  Singapore | port | Singapore, SG | https://service.unece.org/trade/locode/sg.htm, https://www.geonames.org/1880252/
+grid_7854ba25c9d388eb  Company-3b04837881bb07 | hq | Waldkirch, DE | https://search.gleif.org/#/record/529900WUW2F9GQU7NB98
+grid_cab58cdbd2d8e2db  Company-31629ff48d7e29 | hq | Turin, IT | https://search.gleif.org/#/record/5493004C1SL445NFDR90
+grid_955ccac8a37bf22e  Site-5cf7949d081c | distribution_centre | Wojnicz, PL | https://pracawbiedronce.pl/en/biuro
+grid_75e4e72bdf1bdcdb  Company-91042827cac69c | hq | Russelsheim, DE | https://search.gleif.org/#/record/549300B4EI8CRQ4SCL24
+grid_5466f92e9bf22c9e  Company-5d6b15ce60291e | hq | Sosnowiec, PL | https://search.gleif.org/#/record/259400FOXC7GHTOUR230, https://www.geonames.org/3085128/
+grid_3c542bc12651cf15  Company-e7a229b38d0646 | hq | Naucalpan De Juarez, MX | https://search.gleif.org/#/record/5299002XTYOSELIA8N22
+grid_d4b9bfc851b6bdcd  Company-f7e7bbc388976a | hq | Warszawa, PL | https://search.gleif.org/#/record/259400P5AL5W5HAYKT78
+grid_c521393bed82358e  Company-9b776716b40a6b | hq | Bradu, RO | https://search.gleif.org/#/record/2138008U4Y7P7569CR25
+grid_01ef302f50c7e26f  Felixstowe | port | Felixstowe, GB | https://service.unece.org/trade/locode/gb.htm
+grid_ec3b30361ed9ebc1  Company-e906a11e6ccfc6 | hq | Zofingen, CH | https://search.gleif.org/#/record/506700J9QD6IF3937W06
+grid_b657bd63cc79d3c7  Company-bb3d526ebf60de | hq | Lubin, PL | https://search.gleif.org/#/record/G30CO71KTT9JDYJESN22

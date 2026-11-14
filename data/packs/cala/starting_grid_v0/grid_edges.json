@@ -1,0 +1,249 @@
+[
+  {
+    "confidence": "medium",
+    "destination": "grid_a79d96cad43b762f",
+    "edge_type": "route",
+    "id": "edge_0ac6db8ccb770731",
+    "mode": "rail",
+    "observed": null,
+    "origin": "grid_14a780641566124f",
+    "source_ids": [
+      "src_cala_600844"
+    ],
+    "transit_days": null
+  },
+  {
+    "confidence": "medium",
+    "destination": "grid_c74ca2e573ffc131",
+    "edge_type": "route",
+    "id": "edge_1173200b211a1f78",
+    "mode": "sea",
+    "observed": "2025-02",
+    "origin": "grid_273cd4d03b470d58",
+    "source_ids": [
+      "src_cala_600841"
+    ],
+    "transit_days": null
+  },
+  {
+    "confidence": "medium",
+    "destination": "grid_4aca73b39c9eb17c",
+    "edge_type": "route",
+    "id": "edge_145bbe70db1a4cfc",
+    "mode": "rail",
+    "observed": null,
+    "origin": "grid_14a780641566124f",
+    "source_ids": [
+      "src_cala_600844"
+    ],
+    "transit_days": null
+  },
+  {
+    "confidence": "medium",
+    "destination": "grid_bc7e0c105bec0289",
+    "edge_type": "route",
+    "id": "edge_19e60b6b8550ef76",
+    "mode": "sea",
+    "observed": "2025-02",
+    "origin": "grid_273cd4d03b470d58",
+    "source_ids": [
+      "src_cala_600841"
+    ],
+    "transit_days": null
+  },
+  {
+    "confidence": "medium",
+    "destination": "grid_273cd4d03b470d58",
+    "edge_type": "route",
+    "id": "edge_2df0653a2d2b2b5b",
+    "mode": "sea",
+    "observed": "2025-02",
+    "origin": "grid_65ac2d9ed6574191",
+    "source_ids": [
+      "src_cala_600841"
+    ],
+    "transit_days": null
+  },
+  {
+    "confidence": "medium",
+    "destination": "grid_65ac2d9ed6574191",
+    "edge_type": "route",
+    "id": "edge_33f3b7fb1d378f79",
+    "mode": "sea",
+    "observed": "2025-02",
+    "origin": "grid_5e0d1dcf90fb2f7c",
+    "source_ids": [
+      "src_cala_600841"
+    ],
+    "transit_days": null
+  },
+  {
+    "confidence": "medium",
+    "destination": "grid_95bf8a31a33842ee",
+    "edge_type": "route",
+    "id": "edge_50bae176da8d90f9",
+    "mode": "rail",
+    "observed": null,
+    "origin": "grid_14a780641566124f",
+    "source_ids": [
+      "src_cala_600844"
+    ],
+    "transit_days": null
+  },
+  {
+    "confidence": "medium",
+    "destination": "grid_bad66b9be7118540",
+    "edge_type": "supplies",
+    "id": "edge_5e5aea558617d750",
+    "mode": null,
+    "observed": null,
+    "origin": "grid_a090286514d58506",
+    "source_ids": [
+      "src_cala_600025"
+    ],
+    "transit_days": null
+  },
+  {
+    "confidence": "medium",
+    "destination": "grid_acc6f72ff4931c99",
+    "edge_type": "route",
+    "id": "edge_6025bb41988ee0c3",
+    "mode": "sea",
+    "observed": "2025-08",
+    "origin": "grid_4824d6e3875c9ed6",
+    "source_ids": [
+      "src_cala_600840"
+    ],
+    "transit_days": null
+  },
+  {
+    "confidence": "medium",
+    "destination": "grid_4824d6e3875c9ed6",
+    "edge_type": "route",
+    "id": "edge_8d0bd2254efa29d2",
+    "mode": "sea",
+    "observed": "2025-08",
+    "origin": "grid_4cdc6a9d76799700",
+    "source_ids": [
+      "src_cala_600840"
+    ],
+    "transit_days": null
+  },
+  {
+    "confidence": "medium",
+    "destination": "grid_4cdc6a9d76799700",
+    "edge_type": "route",
+    "id": "edge_95e14b3751577621",
+    "mode": "sea",
+    "observed": "2025-08",
+    "origin": "grid_bc7e0c105bec0289",
+    "source_ids": [
+      "src_cala_600840"
+    ],
+    "transit_days": null
+  },
+  {
+    "confidence": "medium",
+    "destination": "grid_15b976349aa20ac6",
+    "edge_type": "ships_via",
+    "id": "edge_97a658ee79731511",
+    "mode": null,
+    "observed": null,
+    "origin": "grid_0d4acb86bf676719",
+    "source_ids": [
+      "src_cala_600839"
+    ],
+    "transit_days": null
+  },
+  {
+    "confidence": "medium",
+    "destination": "grid_b105ff079ee9c5ac",
+    "edge_type": "route",
+    "id": "edge_9eb10209eb4f9be6",
+    "mode": "rail",
+    "observed": null,
+    "origin": "grid_eb78a717ed3ff29c",
+    "source_ids": [
+      "src_cala_600845"
+    ],
+    "transit_days": null
+  },
+  {
+    "confidence": "medium",
+    "destination": "grid_5e0d1dcf90fb2f7c",
+    "edge_type": "route",
+    "id": "edge_a665535181d5015a",
+    "mode": "sea",
+    "observed": "2025-02",
+    "origin": "grid_8987df1f856d081c",
+    "source_ids": [
+      "src_cala_600841"
+    ],
+    "transit_days": null
+  },
+  {
+    "confidence": "medium",
+    "destination": "grid_ae678d2dc0c81060",
+    "edge_type": "route",
+    "id": "edge_b97a559a111fb5e3",
+    "mode": "rail",
+    "observed": null,
+    "origin": "grid_14a780641566124f",
+    "source_ids": [
+      "src_cala_600844"
+    ],
+    "transit_days": null
+  },
+  {
+    "confidence": "medium",
+    "destination": "grid_273cd4d03b470d58",
+    "edge_type": "route",
+    "id": "edge_e024e382c005e61f",
+    "mode": "sea",
+    "observed": "2025-02",
+    "origin": "grid_4cdc6a9d76799700",
+    "source_ids": [
+      "src_cala_600841"
+    ],
+    "transit_days": null
+  },
+  {
+    "confidence": "medium",
+    "destination": "grid_8987df1f856d081c",
+    "edge_type": "route",
+    "id": "edge_f2ae7cc747f2a129",
+    "mode": "sea",
+    "observed": "2025-02",
+    "origin": "grid_c74ca2e573ffc131",
+    "source_ids": [
+      "src_cala_600841"
+    ],
+    "transit_days": null
+  },
+  {
+    "confidence": "medium",
+    "destination": "grid_4cdc6a9d76799700",
+    "edge_type": "route",
+    "id": "edge_f33a7ab5cb77b297",
+    "mode": "sea",
+    "observed": "2025-02",
+    "origin": "grid_bc7e0c105bec0289",
+    "source_ids": [
+      "src_cala_600841"
+    ],
+    "transit_days": null
+  },
+  {
+    "confidence": "medium",
+    "destination": "grid_bc7e0c105bec0289",
+    "edge_type": "route",
+    "id": "edge_f3ab8e78108e92e4",
+    "mode": "sea",
+    "observed": "2025-08",
+    "origin": "grid_acc6f72ff4931c99",
+    "source_ids": [
+      "src_cala_600840"
+    ],
+    "transit_days": null
+  }
+]
