@@ -5,6 +5,7 @@ The tape is hidden. Every tool result is built by `state.build_status` and `Week
 tape. A refused call changes nothing: not the clock, not the controls, not the fee.
 """
 
+import math
 from typing import Annotated, Any, ClassVar
 
 from pydantic import BaseModel, Field, JsonValue
@@ -39,7 +40,8 @@ __all__ = ["SupplyGymTask"]
 MAX_STEPS = 120
 _SUPPLIERS = [f"S{k:02d}" for k in range(1, 11)] + ["A01", "A02"]
 
-Weight = Annotated[float, Field(ge=0.01, le=60)]
+# exp(+-4): the whole accepted range is representable, nothing is clamped silently
+Weight = Annotated[float, Field(ge=math.exp(-4.0), le=math.exp(4.0))]
 
 
 class NoArgs(BaseModel):
@@ -58,7 +60,10 @@ class ControlsArgs(BaseModel):
         default=None, ge=0, le=3, description="Extra safety stock in days of demand (0 to 3)."
     )
     order_multiplier: float | None = Field(
-        default=None, ge=0.6, le=1.65, description="Scales every order (0.6 to 1.65)."
+        default=None,
+        ge=math.exp(-0.5),
+        le=math.exp(0.5),
+        description="Scales every order (0.607 to 1.649).",
     )
     expedite_fraction: float | None = Field(
         default=None,

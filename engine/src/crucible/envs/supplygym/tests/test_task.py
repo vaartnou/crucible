@@ -144,3 +144,36 @@ def test_each_task_plays_its_own_regime(ref: str, regime: int) -> None:
     # `difficulty` does not pick the regime; the task ref does.
     asyncio.run(task.reset(1000, difficulty=1))
     assert task._play.regime == regime
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        {"supplier_weights": {"S01": 0.0184, "S02": 54.5}, "order_multiplier": 0.61},
+        {"order_multiplier": 1.64, "safety_stock_days": 3, "expedite_fraction": 0.3},
+    ],
+)
+def test_accepted_control_range_is_never_clamped_silently(args: dict[str, Any]) -> None:
+    """Every value the schema accepts shows up unchanged in the next status."""
+    from crucible.envs.supplygym.task import ControlsArgs
+
+    ControlsArgs.model_validate(args)
+    p = Play(0, 0)
+    p.apply(dict(args))
+    got = p.status()["controls"]
+    for key, value in args.items():
+        if key == "supplier_weights":
+            for sid, w in value.items():
+                assert got["supplier_weights"][sid] == pytest.approx(w, rel=1e-3)
+        else:
+            assert got[key] == pytest.approx(value, rel=1e-3)
+
+
+@pytest.mark.parametrize("bad", [{"order_multiplier": 0.6}, {"supplier_weights": {"S01": 60}}])
+def test_out_of_range_controls_are_refused_not_clamped(bad: dict[str, Any]) -> None:
+    from pydantic import ValidationError
+
+    from crucible.envs.supplygym.task import ControlsArgs
+
+    with pytest.raises(ValidationError):
+        ControlsArgs.model_validate(bad)
