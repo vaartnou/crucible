@@ -88,3 +88,15 @@ def test_degenerate_strategy_earns_nothing(name: str, regime: int) -> None:
     # mean over seeds: no degenerate strategy beats the default rule by more than noise
     assert float(np.mean(deltas)) < 300.0, (name, deltas)
     assert float(np.mean(totals)) < 0.2, (name, totals)
+
+
+def test_profitable_incomplete_year_earns_zero_but_keeps_profit_delta() -> None:
+    play = Play(1000)
+    for _ in range(4):
+        play.apply({})
+    play.env.tot["profit"] += 10_000
+    result = grade_play(play)
+    assert result.total == 0
+    assert result.breakdown["delta_vs_ss"] == pytest.approx(10_000)
+    assert result.flags["finished_early"]
+    assert grade_play(play) == result

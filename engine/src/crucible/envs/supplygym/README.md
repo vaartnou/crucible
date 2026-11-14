@@ -24,6 +24,9 @@ scores, late orders and fill ratios. Synthetic supplier graph; not real data.
 
 ## Scoring
 
+Reward requires a complete year of control. If the grader completes any weeks, the reward is
+zero; raw profit and its paired deltas are still reported.
+
 `reward = clip((profit - profit_ss) / max(profit_ref - profit_ss, 1000), 0, 1)`.
 
 `profit_ss` is the default (s,S) rule on the same tape; weeks the agent did not play run on it, so
@@ -46,9 +49,9 @@ tape is the plain seed.
 
 ## Known limits
 
-- The reference gains about $2k per episode over the default on dev (1.6%), wins on about 70% of
-  seeds, and loses on some. Most of that gain arrives in the first weeks (a cold-start effect), and
-  leftover inventory has no terminal value. Both are being fixed; see Decisions below.
+- The final simulator step credits on-hand and shipped inbound stock at $10 per unit.
+  The integrity gate still records known full-year shortcuts; the completion rule only
+  addresses rewards from profitable prefixes.
 - Evaluate with `python -m crucible.envs.supplygym.evaluate` (paired deltas, bootstrap interval).
 
 ## Decisions

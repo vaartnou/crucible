@@ -1,2 +1,3 @@
-headroom_floor: 1000     # denominator floor ($): the reference gains about $2k per episode over the default
+headroom_floor: 1000     # denominator floor ($), including tapes where the reference loses
 reference: ppo           # reference policy replayed for the denominator (ppo | ss)
+require_complete: true  # control the full year; grader-completed weeks cannot earn reward

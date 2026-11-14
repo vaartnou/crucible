@@ -101,7 +101,8 @@ _TOOLS = [
     ),
     ToolSpec(
         name="finish",
-        description="Stop now. The remaining weeks run on the default rule, which scores 0.",
+        description="Stop now. The remaining weeks run on the default rule. An incomplete "
+        "year earns zero reward; raw profit is still reported.",
         kind="end",
         args_model=NoArgs,
     ),
@@ -129,8 +130,8 @@ class SupplyGymTask(Task):
     )
     scoring_hash: ClassVar[str] = SCORING_HASH
     # `ss` is the reward anchor and `max_expedite` a cost exploit; both are pinned in the golden
-    # scores. The reference does not solve every seed and `stop_early` (reference for 4 weeks)
-    # often matches it, a known cold-start issue (README, Known limits), so those checks are off.
+    # scores. The reference does not solve every seed (and the anchor itself scores zero),
+    # so the strict reference dominance checks do not apply.
     checks: ClassVar[TaskChecks] = TaskChecks(
         exploit_policies=("ss", "stop_early", "max_expedite"),
         reference_solves=False,
@@ -253,7 +254,8 @@ time, so low on-hand at decision time is normal and not an emergency by itself.
 Tools: get_briefing (static facts), get_status (current view), set_controls (apply controls \
 and advance one week; omitted fields keep their value; refused calls change nothing), finish. \
 You have {MAX_STEPS} tool calls. Stopping early, or never calling set_controls, leaves the \
-remaining weeks on the default rule.
+remaining weeks on the default rule. You must control all 53 weeks to earn reward; an \
+incomplete year earns zero, even if the weeks you played were profitable.
 
 Scoring (0 to 1): your year's profit is compared with the default rule on the same year \
 (0 = no better, which is also what stopping early or doing nothing earns) and with a strong \

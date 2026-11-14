@@ -4,12 +4,13 @@
 reward = clip((profit - profit_ss) / max(profit_ref - profit_ss, floor), 0, 1)
 
 `profit_ss` is what the default controls earn on the same tape; every week the agent did not play
-runs on them, so doing nothing, stopping early and all-zero controls score exactly 0. The
+runs on them. Incomplete years earn zero reward while retaining their actual profit delta. The
 reference is a public-information policy replayed on the same tape. Raw profit and the deltas go
 into the breakdown, because the clipped reward hides small differences.
 """
 
 from importlib.resources import as_file, files
+from math import ceil
 from typing import Final
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -27,6 +28,7 @@ class ScoringConfig(BaseModel):
 
     headroom_floor: float = Field(gt=0)
     reference: str
+    require_complete: bool
 
 
 def _load() -> tuple[ScoringConfig, str]:
@@ -69,6 +71,11 @@ def grade_play(play: Play) -> Score:
     ref = replay_reference(play).env.summary()
     headroom = max(ref["profit"] - ss["profit"], SCORING_CONFIG.headroom_floor)
     reward = min(1.0, max(0.0, (me["profit"] - ss["profit"]) / headroom))
+    # The task is a full year of control. A short profitable prefix followed by the
+    # grader's default replay is not a completed task; retain its raw delta for audits.
+    completed = weeks_played >= ceil(play.env.horizon / play.env.k)
+    if SCORING_CONFIG.require_complete and not completed:
+        reward = 0.0
     breakdown = {
         "profit": me["profit"],
         "profit_ss": ss["profit"],
@@ -83,5 +90,5 @@ def grade_play(play: Play) -> Score:
     return Score(
         total=reward,
         breakdown=breakdown,
-        flags={"finished_early": play.finished, "beat_ss": me["profit"] > ss["profit"]},
+        flags={"finished_early": not completed, "beat_ss": me["profit"] > ss["profit"]},
     )
