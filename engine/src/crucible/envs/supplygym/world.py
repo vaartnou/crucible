@@ -275,7 +275,13 @@ def effective_seed(seed: int, salt: str = "") -> int:
 
 
 def make_tape(
-    world: World, seed: int, rate_scale: float = 1.0, horizon: int = HORIZON, salt: str = ""
+    world: World,
+    seed: int,
+    rate_scale: float = 1.0,
+    horizon: int = HORIZON,
+    salt: str = "",
+    *,
+    demand_shocks: bool = False,
 ) -> Tape:
     ss = np.random.SeedSequence([effective_seed(seed, salt), 202])
     r_ev, r_dem, r_news, r_fa, r_rum, r_risk = [
@@ -433,6 +439,19 @@ def make_tape(
         r["id"] = k
 
     demand = r_dem.poisson(DEMAND_MEAN, size=T).astype(np.int64)
+    if demand_shocks:
+        # A separate stream leaves all existing draws (including baseline demand) untouched.
+        # One 2-4 week episode per 90-day window, alternating surges and dips.
+        r_shock = np.random.default_rng([effective_seed(seed, salt), 203])
+        surge = bool(r_shock.integers(0, 2))
+        for window in range(0, horizon, 90):
+            if window + 14 >= horizon:
+                break
+            start = int(r_shock.integers(window + 14, min(window + 60, horizon)))
+            end = min(start + int(r_shock.integers(14, 29)), T)
+            factor = 1.5 if surge else 0.65
+            demand[start:end] = np.rint(demand[start:end] * factor).astype(np.int64)
+            surge = not surge
     risk_noise = r_risk.normal(0, 0.12, size=(T, N_DIRECT + N_ALT))
     risk_stale = r_risk.random((T, N_DIRECT + N_ALT)) < 0.10
     return Tape(int(seed), rate_scale, events, rumors, news, demand, H, risk_noise, risk_stale)

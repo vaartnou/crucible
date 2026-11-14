@@ -53,10 +53,12 @@ class SupplyEnv:
         salt: str = "",
         price_lo: float = 9.6,
         price_hi: float = 10.4,
+        demand_shocks: bool = False,
     ):
         assert signals in ("full", "no_news", "none", "placebo")
         self.world = make_world(world_seed, price_lo, price_hi)
         self.salt = salt
+        self.demand_shocks = demand_shocks
         self.rate_scale, self.k, self.signals, self.horizon = (
             rate_scale,
             decision_interval,
@@ -80,7 +82,14 @@ class SupplyEnv:
         if s is None:
             raise ValueError("seed required")
         self.seed_ = int(s)
-        self.tape = make_tape(self.world, self.seed_, self.rate_scale, self.horizon, self.salt)
+        self.tape = make_tape(
+            self.world,
+            self.seed_,
+            self.rate_scale,
+            self.horizon,
+            self.salt,
+            demand_shocks=self.demand_shocks,
+        )
         self._signal_view()
         self.day = 0
         self.onhand = float(7 * DEMAND_MEAN)
@@ -106,6 +115,7 @@ class SupplyEnv:
         )
         self._terminal_done = False
         self.decisions, self.days_log = [], []
+        self.observed_demand = []  # completed days only, never a view of the future tape
         self._new_text = []
         return self._obs(), self._info([])
 
@@ -257,6 +267,8 @@ class SupplyEnv:
         self.orders = keep
         # fill-rate tracking at the *nominal* ETA (delayed signal): evaluate against what was shipped
         dem = int(t.demand[d])
+        if self.demand_shocks:
+            self.observed_demand.append({"day": d, "units": dem})
         sales = min(dem, int(self.onhand))
         lost = dem - sales
         self.onhand -= sales

@@ -105,6 +105,8 @@ def build_status(
     }
     if ledger is not None:
         out["last_week"] = ledger
+    if env.demand_shocks:
+        out["observed_demand"] = [dict(row) for row in env.observed_demand[-28:]]
     return out
 
 

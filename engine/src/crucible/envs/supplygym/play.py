@@ -46,11 +46,24 @@ class Week:
 class Play:
     """A simulator, its public signal log and the controls API."""
 
-    def __init__(self, seed: int, regime: int = 0, salt: str = "", signals: str = "full") -> None:
+    def __init__(
+        self,
+        seed: int,
+        regime: int = 0,
+        salt: str = "",
+        signals: str = "full",
+        *,
+        demand_shocks: bool = False,
+    ) -> None:
         if regime not in REGIMES:
             raise ValueError(f"unknown regime {regime}; known: {sorted(REGIMES)}")
         self.seed, self.regime = seed, regime
-        self.env = SupplyEnv(signals=signals, salt=salt, **REGIMES[regime])  # type: ignore[arg-type]
+        self.env = SupplyEnv(
+            signals=signals,
+            salt=salt,
+            demand_shocks=demand_shocks,
+            **REGIMES[regime],  # type: ignore[arg-type]
+        )
         self.env.reset(seed=seed)
         self.log: list[dict[str, Any]] = []
         self.weeks = 0

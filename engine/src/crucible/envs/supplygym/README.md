@@ -51,6 +51,39 @@ tape is the plain seed.
   leftover inventory has no terminal value. Both are being fixed; see Decisions below.
 - Evaluate with `python -m crucible.envs.supplygym.evaluate` (paired deltas, bootstrap interval).
 
+## Optional demand shocks (#23)
+
+Shocks are **off by default**. For experiments, explicitly pass the `demand_shocks=True`
+flag to `SupplyGymTask`, `SupplyGymFreshTask`, `Play`, or `SupplyEnv`:
+
+```python
+from crucible.envs.supplygym.task import SupplyGymTask
+
+task = SupplyGymTask(demand_shocks=True)
+await task.reset(1000)
+```
+
+Each 90-day window contains one randomly timed 14-28 day shock after at least 14 days.
+Surges (1.5x demand) alternate with dips (0.65x); the first direction is random. Demand
+remains integer and nonnegative. A separate salted random stream leaves supplier disruptions,
+news, rumors and risk noise unchanged. Supplier prices remain fixed.
+
+With shocks on, status includes `observed_demand`: day/unit pairs for the last 28 **completed**
+days, including unmet demand. It never exposes future demand or the shock schedule. With
+shocks off, the status schema and instruction stay unchanged. The default and reference
+grader replays inherit the flag and salt, so they face exactly the same demand as the agent.
+The PPO input dimensions and weights are unchanged; it has not been retrained for shocks.
+
+Standard registered tasks, CLI evaluation and Harbor exports continue to use shocks off.
+Shock experiments are not standard-tier scores. Regression tests pin pre-change tape digests,
+raw default/reference anchors and rewards in both regimes; existing policy goldens are retained.
+Recalibrate anchors and retrain/measure shock-enabled policies after the replacement base
+world/data settles, as requested in issue #23; this optional feature does not settle that world.
+
+The shocks-off regression fixtures were measured on `supplygym-task` at `1e830d4`,
+including its terminal inventory credit. In shock mode the weekly cost ledger remains
+available alongside the trailing history of realised demand.
+
 ## Decisions
 
 - 2026-11-14 — Reward is anchored at the default (s,S) rule, not at do-nothing: `reward = clip((profit - profit_ss) / max(profit_ref - profit_ss, 1000), 0, 1)`. Weeks the agent did not play run on the default controls, so no calls, `finish` at once, and all-zero controls all score exactly 0. Anchored at do-nothing, all-zero controls would have scored about 0.8. Raw profit, `delta_vs_ss` and `delta_vs_ref` are in the grade breakdown because the clipped reward hides small differences.

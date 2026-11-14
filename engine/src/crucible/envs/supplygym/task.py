@@ -139,7 +139,8 @@ class SupplyGymTask(Task):
     # Simulator regime (`play.REGIMES`). Each regime is its own task, not a `difficulty`.
     regime: ClassVar[int] = 0
 
-    def __init__(self) -> None:
+    def __init__(self, *, demand_shocks: bool = False) -> None:
+        self.demand_shocks = demand_shocks
         self._play: Play | None = None
 
     async def reset(
@@ -147,7 +148,7 @@ class SupplyGymTask(Task):
     ) -> Observation:
         # `difficulty` is unused: the regime is fixed per task (see `SupplyGymFreshTask`).
         # No salt (offline eval, golden scores) keeps the plain seed: `effective_seed(seed, "")`.
-        self._play = Play(seed, self.regime, salt or "")
+        self._play = Play(seed, self.regime, salt or "", demand_shocks=self.demand_shocks)
         return Observation(text=self.instruction(), data={"day": 0})
 
     def tools(self) -> list[ToolSpec]:
@@ -259,7 +260,13 @@ Scoring (0 to 1): your year's profit is compared with the default rule on the sa
 (0 = no better, which is also what stopping early or doing nothing earns) and with a strong \
 reference agent that sees the same information as you (1 = as good as the reference). Costs \
 count: expedite is ${EXPEDITE_COST:g} per unit; an alternative costs the fee plus a higher \
-unit price."""
+unit price.""" + (
+            "\n\nDemand shocks are enabled: demand can surge or dip for 2-4 weeks. "
+            "Status includes observed_demand (day and units for the last 28 completed days), "
+            "including unmet demand. Supplier prices stay fixed."
+            if self.demand_shocks
+            else ""
+        )
 
 
 @register_task
