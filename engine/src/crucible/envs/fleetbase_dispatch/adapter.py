@@ -7,21 +7,18 @@ import httpx
 from pydantic import JsonValue, TypeAdapter
 
 from crucible.backends import BackendEpisode, BackendError
+from crucible.envs.fleetbase_dispatch.adapter_protocol import FleetbaseOperationError
 from crucible.envs.fleetbase_dispatch.sim import PhysicalEvent
 from crucible.envs.fleetbase_dispatch.world import Request, Vehicle
 
 _JSON = TypeAdapter(JsonValue)
 
-
-class FleetbaseOperationError(BackendError):
-    """A rejected native operation; public messages contain no backend payloads."""
-
-    def __init__(self, message: str, status_code: int | None = None) -> None:
-        super().__init__(message)
-        self.status_code = status_code
+__all__ = ["FleetbaseAdapter", "FleetbaseOperationError"]
 
 
 class FleetbaseAdapter:
+    """Native implementation of ``DispatchAdapter``."""
+
     def __init__(self, episode: BackendEpisode) -> None:
         self._client = episode.client
         self._prefix = "crucible-" + episode.resource.episode_id + "-"

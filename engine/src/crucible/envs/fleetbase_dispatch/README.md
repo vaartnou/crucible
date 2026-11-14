@@ -74,6 +74,24 @@ with complete pickup and terminal delivery legs; greedy uses the nearest feasibl
 request. `do_nothing` stops immediately; `stop_early` stops after the first
 committed dispatch. The same continuation rules apply to every operator.
 
+## Backends and `fleetbase_sim@1`
+
+`DispatchTaskBase` (`task.py`) holds the tools, physics bridge and grading. The
+order backend is a `DispatchAdapter` (`adapter_protocol.py`):
+
+- `FleetbaseAdapter` (`adapter.py`) talks to native Fleetbase over HTTP.
+- `InMemoryAdapter` (`memory_adapter.py`) keeps orders in dicts with
+  deterministic IDs. It returns the same `committed()`/`snapshot()` shapes and
+  rejects the same operations as native: unknown order or vehicle, dispatch
+  before assignment, change after pickup, and cancelled orders. Create and
+  repeated dispatch are idempotent, as in native.
+
+`fleetbase_dispatch@1` uses native by default; `FLEETBASE_BACKEND=memory` selects
+the in-memory backend without the HTTP runtime. `fleetbase_sim@1` has the same
+tools, instruction and reward, always uses memory, has no deployment bundle, and
+runs the generic task checks. `tests/test_parity.py` replays one recorded tool
+trace on every backend and requires equal events, economics and rejection counts.
+
 ## Validation and comparison
 
 Offline simulator/adapter/task tests check trust, deterministic physics,

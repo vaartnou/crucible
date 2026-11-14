@@ -5,10 +5,11 @@ from typing import cast
 import pytest
 from pydantic import JsonValue
 
+from crucible.backends import BackendError
 from crucible.core.tools import ToolCall
 from crucible.envs.fleetbase_dispatch.adapter import FleetbaseAdapter
 from crucible.envs.fleetbase_dispatch.sim import PhysicalEvent, WorldSimulator
-from crucible.envs.fleetbase_dispatch.task import FleetbaseDispatch
+from crucible.envs.fleetbase_dispatch.task import BACKEND_ENV, FleetbaseDispatch, FleetbaseSim
 from crucible.envs.fleetbase_dispatch.world import Request, Vehicle, World
 
 
@@ -104,3 +105,34 @@ async def test_pickup_prevents_reassignment_and_unreleased_request_cannot_create
     ).ok
     assert not (await task.step(ToolCall(name="create_order", args={"request_id": "unknown"}))).ok
     assert not (await task.step(ToolCall(name="advance", args={"minutes": -1}))).ok
+
+
+def test_sim_task_is_offline_with_generic_checks() -> None:
+    sim = FleetbaseSim()
+    assert not sim.external_backend and sim.deployment_bundle() is None
+    assert sim.instruction() == FleetbaseDispatch().instruction()
+    assert [t.model_dump() for t in sim.tools()] == [
+        t.model_dump() for t in FleetbaseDispatch().tools()
+    ]
+    checks = FleetbaseSim.checks
+    assert checks.determinism and checks.do_nothing_zero and checks.reward_bounds
+    assert checks.no_hidden_state and checks.reference_solves and checks.exploits_below_reference
+    assert FleetbaseDispatch.external_backend
+
+
+async def test_dispatch_backend_selection(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in ("FLEETBASE_URL", "FLEETBASE_TOKEN", "FLEETBASE_DEPLOYMENT_ID"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.delenv(BACKEND_ENV, raising=False)
+    with pytest.raises(BackendError):
+        await FleetbaseDispatch().reset(0)
+    monkeypatch.setenv(BACKEND_ENV, "postgres")
+    with pytest.raises(BackendError):
+        await FleetbaseDispatch().reset(0)
+    monkeypatch.setenv(BACKEND_ENV, "memory")
+    task = FleetbaseDispatch()
+    observation = await task.reset(0)
+    assert observation.data == (await FleetbaseSim().reset(0)).data
+    with pytest.raises(RuntimeError):
+        await task.reset(0)
+    await task.aclose()

@@ -1,4 +1,8 @@
-"""Native-workflow operators that use only documented public observations/tools."""
+"""Native-workflow operators that use only documented public observations/tools.
+
+Each operator is registered for `fleetbase_dispatch` and for `fleetbase_sim`, which share
+tools and observations.
+"""
 
 import math
 from dataclasses import dataclass
@@ -318,6 +322,7 @@ class WorkflowOperator:
 
 
 @register_policy("reference", "fleetbase_dispatch")
+@register_policy("reference", "fleetbase_sim")
 class ReferenceOperator(WorkflowOperator):
     """Optimize feasible routes over all released demand using the public workflow."""
 
@@ -325,6 +330,7 @@ class ReferenceOperator(WorkflowOperator):
 
 
 @register_policy("greedy", "fleetbase_dispatch")
+@register_policy("greedy", "fleetbase_sim")
 class GreedyOperator(WorkflowOperator):
     """Nearest feasible order baseline with the same native workflow and clock."""
 
@@ -332,6 +338,7 @@ class GreedyOperator(WorkflowOperator):
 
 
 @register_policy("stop_early", "fleetbase_dispatch")
+@register_policy("stop_early", "fleetbase_sim")
 class StopEarlyOperator(WorkflowOperator):
     """Create, assign and dispatch one order, then invoke published continuation."""
 

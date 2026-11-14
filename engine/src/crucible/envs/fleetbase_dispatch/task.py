@@ -1,8 +1,17 @@
-"""Native Fleetbase workflow backed by private deterministic physical evidence."""
+"""Fleetbase dispatch workflow backed by private deterministic physical evidence.
+
+`DispatchTaskBase` holds the tools, the physics bridge and grading. Subclasses only
+choose the order backend through `_open_adapter`:
+
+- `fleetbase_dispatch@1` uses native Fleetbase, or the in-memory backend when
+  `FLEETBASE_BACKEND=memory`.
+- `fleetbase_sim@1` always uses the in-memory backend and runs the generic checks.
+"""
 
 import copy
 import json
 import os
+from abc import abstractmethod
 from dataclasses import asdict
 from pathlib import Path
 from typing import ClassVar
@@ -27,56 +36,58 @@ from crucible.core.tools import (
     tool_map,
     validate_call,
 )
-from crucible.envs.fleetbase_dispatch.adapter import FleetbaseAdapter, FleetbaseOperationError
+from crucible.envs.fleetbase_dispatch.adapter import FleetbaseAdapter
+from crucible.envs.fleetbase_dispatch.adapter_protocol import (
+    DispatchAdapter,
+    FleetbaseOperationError,
+)
 from crucible.envs.fleetbase_dispatch.deployment import make_bundle
+from crucible.envs.fleetbase_dispatch.memory_adapter import InMemoryAdapter
 from crucible.envs.fleetbase_dispatch.sim import WorldSimulator
-from crucible.envs.fleetbase_dispatch.world import make_world
+from crucible.envs.fleetbase_dispatch.world import World, make_world
 from crucible.export.deployment import DeploymentBundle
+
+BACKEND_ENV = "FLEETBASE_BACKEND"
 
 
 class EmptyArgs(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-@register_task
-class FleetbaseDispatch(Task):
-    spec = TaskSpec(
-        id="fleetbase_dispatch",
-        version=1,
-        max_steps=128,
-        title="Fleetbase Dispatch",
-        description="Operate native Fleetbase orders against a deterministic delivery world.",
-        keywords=("logistics", "fleetbase", "external-backend"),
-        cpus=2,
-        memory_mb=4096,
-        timeout_sec=1800,
-    )
-    external_backend: ClassVar[bool] = True
+class DispatchTaskBase(Task):
+    """One dispatch episode. Not registered; subclasses set `spec` and `_open_adapter`."""
+
     scoring_hash: ClassVar[str] = "fleetbase-physical-economics-v2"
-    # Generic offline tests cannot start application services. Explicit simulator,
-    # adapter and clean-deployment integration tests cover this environment.
-    checks = TaskChecks(
-        seeds=(),
-        determinism=False,
-        do_nothing_zero=False,
-        reward_bounds=False,
-        no_hidden_state=False,
-        reference_solves=False,
-        exploits_below_reference=False,
-        oracle_perfect=False,
-    )
 
     def __init__(self) -> None:
-        self._runtime: HttpBackendRuntime | None = None
-        self._adapter: FleetbaseAdapter | None = None
+        self._adapter: DispatchAdapter | None = None
         self._sim: WorldSimulator | None = None
         self._score: Score | None = None
         self._ended = False
         self._evidence: dict[str, JsonValue] | None = None
         self._rejected_operations = 0
         self._episode_id = ""
+        self._started = False
         self._resources_closed = False
         self._cleanup_failed = False
+
+    # Hooks for subclasses ------------------------------------------------------------
+
+    @abstractmethod
+    async def _open_adapter(self, seed: int, salt: str | None) -> DispatchAdapter:
+        """Acquire the episode's backend, set `_episode_id` and return its adapter."""
+
+    async def _close_backend(self) -> None:
+        """Release backend infrastructure after adapter cleanup. Must tolerate repeats."""
+        return None
+
+    def _make_world(self, seed: int, salt: str | None) -> World:
+        return make_world(seed, salt)
+
+    def _make_sim(self, world: World) -> WorldSimulator:
+        return WorldSimulator(world)
+
+    # Task API ------------------------------------------------------------------------
 
     def instruction(self) -> str:
         return (
@@ -145,38 +156,11 @@ class FleetbaseDispatch(Task):
     ) -> Observation:
         if difficulty != 0:
             raise ValueError("Fleetbase currently supports difficulty=0 only")
-        if self._runtime is not None:
+        if self._started:
             raise RuntimeError("Create a fresh task instance for every Fleetbase episode")
-        url = os.environ.get("FLEETBASE_URL")
-        token = os.environ.get("FLEETBASE_TOKEN")
-        deployment = os.environ.get("FLEETBASE_DEPLOYMENT_ID")
-        if not url or not token or not deployment:
-            raise BackendError("Fleetbase requires private URL, token and deployment configuration")
-        if os.environ.get("FLEETBASE_EXCLUSIVE") != "1":
-            raise BackendError("Fleetbase requires an exclusively owned test installation")
-        connection = BackendConnection(
-            deployment_id=deployment,
-            base_url=SecretStr(url),
-            headers={
-                "Authorization": SecretStr(f"Bearer {token}"),
-                "Accept": SecretStr("application/json"),
-            },
-            ownership="managed" if os.environ.get("FLEETBASE_MANAGED") == "1" else "attached",
-            exclusive_access=True,
-        )
-        self._runtime = HttpBackendRuntime(
-            connection,
-            ExclusiveLeaseProvider(
-                Path(os.environ.get("FLEETBASE_LOCK_DIR", "/tmp/crucible-backend-leases"))
-            ),
-            readiness_path="/v1/orders",
-            readiness_attempts=90,
-            readiness_interval=1,
-        )
-        episode = await self._runtime.acquire()
-        self._episode_id = episode.resource.episode_id
-        self._sim = WorldSimulator(make_world(seed, salt))
-        self._adapter = FleetbaseAdapter(episode)
+        self._started = True
+        self._adapter = await self._open_adapter(seed, salt)
+        self._sim = self._make_sim(self._make_world(seed, salt))
         await self._adapter.prepare(self._sim.world.vehicles)
         return Observation(data=await self._observation())
 
@@ -312,8 +296,113 @@ class FleetbaseDispatch(Task):
             self._cleanup_failed = True
             raise
         finally:
-            if self._runtime is not None:
-                await self._runtime.aclose()
+            await self._close_backend()
+
+
+def _memory_adapter(seed: int, salt: str | None) -> tuple[str, InMemoryAdapter]:
+    # Deterministic per world, so observations and evidence paths are reproducible.
+    episode_id = f"memory-{seed}" if salt is None else f"memory-{seed}-salted"
+    return episode_id, InMemoryAdapter(episode_id)
+
+
+@register_task
+class FleetbaseDispatch(DispatchTaskBase):
+    spec = TaskSpec(
+        id="fleetbase_dispatch",
+        version=1,
+        max_steps=128,
+        title="Fleetbase Dispatch",
+        description="Operate native Fleetbase orders against a deterministic delivery world.",
+        keywords=("logistics", "fleetbase", "external-backend"),
+        cpus=2,
+        memory_mb=4096,
+        timeout_sec=1800,
+    )
+    external_backend: ClassVar[bool] = True
+    # Generic offline tests cannot start application services. `fleetbase_sim@1` runs
+    # the generic checks on the same logic; explicit simulator, adapter, parity and
+    # clean-deployment integration tests cover the native backend.
+    checks = TaskChecks(
+        seeds=(),
+        determinism=False,
+        do_nothing_zero=False,
+        reward_bounds=False,
+        no_hidden_state=False,
+        reference_solves=False,
+        exploits_below_reference=False,
+        oracle_perfect=False,
+    )
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._runtime: HttpBackendRuntime | None = None
+
+    async def _open_adapter(self, seed: int, salt: str | None) -> DispatchAdapter:
+        backend = os.environ.get(BACKEND_ENV, "native")
+        if backend == "memory":
+            self._episode_id, adapter = _memory_adapter(seed, salt)
+            return adapter
+        if backend != "native":
+            raise BackendError(f"{BACKEND_ENV} must be 'memory' or 'native'")
+        url = os.environ.get("FLEETBASE_URL")
+        token = os.environ.get("FLEETBASE_TOKEN")
+        deployment = os.environ.get("FLEETBASE_DEPLOYMENT_ID")
+        if not url or not token or not deployment:
+            raise BackendError("Fleetbase requires private URL, token and deployment configuration")
+        if os.environ.get("FLEETBASE_EXCLUSIVE") != "1":
+            raise BackendError("Fleetbase requires an exclusively owned test installation")
+        connection = BackendConnection(
+            deployment_id=deployment,
+            base_url=SecretStr(url),
+            headers={
+                "Authorization": SecretStr(f"Bearer {token}"),
+                "Accept": SecretStr("application/json"),
+            },
+            ownership="managed" if os.environ.get("FLEETBASE_MANAGED") == "1" else "attached",
+            exclusive_access=True,
+        )
+        self._runtime = HttpBackendRuntime(
+            connection,
+            ExclusiveLeaseProvider(
+                Path(os.environ.get("FLEETBASE_LOCK_DIR", "/tmp/crucible-backend-leases"))
+            ),
+            readiness_path="/v1/orders",
+            readiness_attempts=90,
+            readiness_interval=1,
+        )
+        episode = await self._runtime.acquire()
+        self._episode_id = episode.resource.episode_id
+        return FleetbaseAdapter(episode)
+
+    async def _close_backend(self) -> None:
+        if self._runtime is not None:
+            await self._runtime.aclose()
 
     def deployment_bundle(self) -> DeploymentBundle:
         return make_bundle()
+
+
+@register_task
+class FleetbaseSim(DispatchTaskBase):
+    """`fleetbase_dispatch@1` on the in-memory backend: same tools, instruction and reward."""
+
+    spec = TaskSpec(
+        id="fleetbase_sim",
+        version=1,
+        max_steps=128,
+        title="Fleetbase Dispatch (simulated backend)",
+        description=(
+            "Operate dispatch orders against a deterministic delivery world, with an "
+            "in-memory order backend that mirrors native Fleetbase."
+        ),
+        keywords=("logistics", "fleetbase", "simulation"),
+    )
+    # The reference pays driving cost, so no policy reaches 1.0 and there is no oracle.
+    checks = TaskChecks(exploit_policies=("stop_early", "greedy"), oracle_perfect=False)
+
+    async def _open_adapter(self, seed: int, salt: str | None) -> DispatchAdapter:
+        self._episode_id, adapter = _memory_adapter(seed, salt)
+        return adapter
+
+
+__all__ = ["BACKEND_ENV", "DispatchTaskBase", "FleetbaseDispatch", "FleetbaseSim"]
