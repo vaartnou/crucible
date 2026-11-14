@@ -7,7 +7,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from crucible.core.registry import get_task
+from crucible.core.registry import get_task, list_tasks
 from crucible.envs.incident.world import make_world
 from crucible.server.app import create_app
 from crucible.server.settings import Settings
@@ -60,7 +60,7 @@ async def test_healthz(client: httpx.AsyncClient) -> None:
 
 async def test_tasks(client: httpx.AsyncClient) -> None:
     r = await client.get("/v1/tasks")
-    assert r.json() == ["guess@1", "incident@1"]
+    assert r.json() == list_tasks()
 
 
 async def test_tools_have_schemas(client: httpx.AsyncClient) -> None:

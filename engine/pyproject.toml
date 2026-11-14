@@ -25,6 +25,7 @@ crucible = "crucible:main"
 [project.entry-points."crucible.envs"]
 guess = "crucible.envs.guess"
 incident = "crucible.envs.incident"
+last_siding = "crucible.envs.last_siding"
 
 [build-system]
 requires = ["uv_build>=0.12.18,<0.13.0"]

@@ -40,17 +40,23 @@ async def test_tools_list_matches_specs(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("seed", range(3))
-async def test_reference_over_mcp_matches_local(seed: int, tmp_path: Path) -> None:
-    local = (
-        await LocalExecutor().run([Job(task=TASK, policy="reference", seed=seed)], tmp_path / "l")
-    )[0]
-    task = get_task(TASK)
-    async with live_sidecar(tmp_path / "srv", seed) as url:
+@pytest.mark.parametrize(
+    ("ref", "policy"),
+    [(TASK, "reference"), ("last_siding@1", "reference"), ("last_siding@1", "stop_early")],
+)
+async def test_reference_over_mcp_matches_local(
+    seed: int, tmp_path: Path, ref: str, policy: str
+) -> None:
+    local = (await LocalExecutor().run([Job(task=ref, policy=policy, seed=seed)], tmp_path / "l"))[
+        0
+    ]
+    task = get_task(ref)
+    async with live_sidecar(tmp_path / "srv", seed, ref) as url:
         episode, instruction = await McpEpisode.connect(
             f"{url}/mcp", grade=lambda: fetch_grade(url, TOKEN)
         )
         outcome = await drive(
-            get_policy("reference", TASK), episode, task.spec, task.tools(), instruction
+            get_policy(policy, ref), episode, task.spec, task.tools(), instruction
         )
         async with httpx.AsyncClient() as http:
             body = (await http.get(f"{url}/grade", headers={"x-grade-token": TOKEN})).json()

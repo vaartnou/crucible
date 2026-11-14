@@ -23,6 +23,23 @@ Noise alerts and unrelated deploys make a fast guess risky: a wrong repair is a 
 Environment card: [engine/src/crucible/envs/incident/README.md](engine/src/crucible/envs/incident/README.md).
 Harbor run details: [docs/harbor-runs.md](docs/harbor-runs.md).
 
+## Last Siding: rail-yard planning demo
+
+[Play the fork and see the evidence](docs/last-siding/README.md). On the demo board, staging
+a correctly ordered pair costs one extra shunt; adding one siding slot removes that cost.
+The reference finished 300/300 local episodes. Frontier performance is unmeasured.
+
+```sh
+uv run --directory engine python -m crucible.envs.last_siding.tests.demo
+```
+
+With the judge prerequisites, run the reference, three frontier attempts, do-nothing and
+stop-early on one frozen board:
+
+```sh
+uv run --directory engine python scripts/last_siding_judge.py
+```
+
 ## Quickstart
 
 You need [uv](https://docs.astral.sh/uv/). This runs the small `guess@1` environment in process:

@@ -1,0 +1,45 @@
+{
+  "task": "last_siding@1",
+  "seed": 0,
+  "repeat_ids": [
+    0,
+    1,
+    2
+  ],
+  "scoring_hash": "17e17371fec7616858353bb4c9120c0931ea52dc553ed5a57430a8cc66c868f4",
+  "model": "google/gemini-3.8-flash",
+  "harbor": "0.26.0",
+  "opencode": "1.19.5",
+  "web_search": false,
+  "sampling": "provider/harness defaults; no temperature or model seed override",
+  "agent_timeout_sec": 600,
+  "prompt": "# Last Siding\n\nYour tools are on the MCP server `mcp-server` (`http://mcp-server:8000/mcp`). Use only those\ntools. Nothing else in this container is part of the task.\n\nDispatch both manifests in order. Call inspect to see the yard. Each list runs from buffer (left) to accessible end (right). Shunt moves a suffix to the right end of another track without reversing it. Example: D=[A,B,C], L=[X]; shunt D to L count 2 gives D=[A], L=[X,B,C]. Locomotive travel is included; no orientation. Capacity is a hard limit. Dispatch removes the ENTIRE D track only when it equals the next manifest. 16 successful shunts; dispatch costs no shunts, even at zero remaining. The harness allows 64 total calls including reads, invalid calls, previews and dispatches. Preview is hypothetical; inspect reads the real board. Stop ends play. Score: none sent 0; first only 0.10; both sent 0.80 + 0.20 * minimum shunts / shunts used.\n",
+  "release": {
+    "task_ref": "last_siding@1",
+    "seeds": [
+      0
+    ],
+    "solution_policy": "reference",
+    "engine_version": "0.1.0",
+    "git_commit": "0bc537dc31d32e192aa06982be66e963b06e25e2",
+    "wheel": "crucible-0.1.0-py3-none-any.whl",
+    "wheel_sha256": "10aea1cb58495bd3948a149ca67e2d3ed350148062259cec33b41c62b66ef56b",
+    "tasks": [
+      "last_siding-1-seed-0"
+    ]
+  },
+  "status": "frontier_unmeasured",
+  "local_baseline": {
+    "seeds": "0-299",
+    "repeat_ids": [
+      0
+    ],
+    "salted": false,
+    "policies": [
+      "reference",
+      "do_nothing",
+      "stop_early"
+    ]
+  },
+  "checkout": "uncommitted gym on recorded base commit; wheel hash identifies this export"
+}
