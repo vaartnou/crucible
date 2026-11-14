@@ -252,6 +252,7 @@ class Tape:
     risk_noise: np.ndarray
     risk_stale: np.ndarray
     lateness_noise: np.ndarray = None
+    risk_lag: int = 3
 
 
 def _health(world: World, S: np.ndarray) -> np.ndarray:
@@ -275,8 +276,16 @@ def effective_seed(seed: int, salt: str = "") -> int:
 
 
 def make_tape(
-    world: World, seed: int, rate_scale: float = 1.0, horizon: int = HORIZON, salt: str = ""
+    world: World,
+    seed: int,
+    rate_scale: float = 1.0,
+    horizon: int = HORIZON,
+    salt: str = "",
+    *,
+    hard: bool = False,
 ) -> Tape:
+    if hard and seed < 30000:
+        raise ValueError("hard evaluation requires seeds >= 30000")
     ss = np.random.SeedSequence([effective_seed(seed, salt), 202])
     r_ev, r_dem, r_news, r_fa, r_rum, r_risk = [
         np.random.Generator(np.random.PCG64(s)) for s in ss.spawn(6)
@@ -320,6 +329,28 @@ def make_tape(
         if nd["kind"] in ("direct", "tier2"):
             for s in poisson_starts(0.04):
                 add_event("bankruptcy", [i], nd["region"], 1.0, 150, 365, s, node=i)
+    # The standard generator already allows overlaps. An independent stream adds a
+    # guaranteed simultaneous direct-supplier strike in 20% of hard episodes.
+    r_hard = np.random.default_rng(np.random.SeedSequence([effective_seed(seed, salt), 404]))
+    risk_lag = int(r_hard.choice([7, 14])) if hard else 3
+    if hard and events and r_hard.random() < 0.20:
+        anchor = events[int(r_hard.integers(len(events)))]
+        candidates = [i for i in range(N_DIRECT) if i not in anchor["nodes"]]
+        if not candidates:
+            candidates = list(range(N_DIRECT))
+        node = int(r_hard.choice(candidates))
+        events.append(
+            dict(
+                id=len(events),
+                type="strike",
+                region=world.nodes[node]["region"],
+                node=node,
+                nodes=[node],
+                sev=0.8,
+                start=anchor["start"],
+                end=anchor["start"] + 21,
+            )
+        )
     events.sort(key=lambda e: (e["start"], e["id"]))
     for k, e in enumerate(events):
         e["id"] = k
@@ -380,6 +411,28 @@ def make_tape(
                 _event=None,
             )
         )
+    if hard:
+        for e in events:
+            # Two additional false headlines per event during the lag window.
+            for _ in range(2):
+                day = e["start"] + int(r_hard.integers(risk_lag))
+                if day >= horizon:
+                    continue
+                typ = str(r_hard.choice(EVENT_TYPES))
+                reg = str(r_hard.choice(REGIONS))
+                tpl = _TEMPLATES[typ][int(r_hard.integers(3))]
+                news.append(
+                    dict(
+                        day=day,
+                        kind="news",
+                        type=typ,
+                        region=reg,
+                        node=None,
+                        severity="major",
+                        text=tpl.format(w=reg),
+                        _event=None,
+                    )
+                )
     news.sort(key=lambda x: x["day"])
 
     rumors = []
@@ -435,7 +488,18 @@ def make_tape(
     demand = r_dem.poisson(DEMAND_MEAN, size=T).astype(np.int64)
     risk_noise = r_risk.normal(0, 0.12, size=(T, N_DIRECT + N_ALT))
     risk_stale = r_risk.random((T, N_DIRECT + N_ALT)) < 0.10
-    return Tape(int(seed), rate_scale, events, rumors, news, demand, H, risk_noise, risk_stale)
+    return Tape(
+        int(seed),
+        rate_scale,
+        events,
+        rumors,
+        news,
+        demand,
+        H,
+        risk_noise,
+        risk_stale,
+        risk_lag=risk_lag,
+    )
 
 
 def tape_digest(t: Tape) -> str:

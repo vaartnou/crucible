@@ -39,7 +39,7 @@ _COST_KEYS: Final = ("expedite", "switching", "stockout", "holding", "purchase")
 
 
 def _fresh(play: Play) -> Play:
-    return Play(play.seed, play.regime, play.env.salt)
+    return Play(play.seed, play.regime, play.env.salt, hard=play.hard)
 
 
 def replay_default(play: Play) -> Play:

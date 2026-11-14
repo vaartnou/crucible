@@ -16,6 +16,8 @@ from pathlib import Path
 
 from crucible.core.executor import LocalExecutor
 from crucible.core.jobs import Job
+from crucible.core.transcript import read_transcript
+from crucible.envs.supplygym.grader import SCORING_HASH
 from crucible.envs.supplygym.play import SPLITS
 
 
@@ -34,27 +36,73 @@ def main() -> None:
     ap.add_argument("--repeats", type=int, default=1)
     ap.add_argument("--concurrency", type=int, default=4)
     ap.add_argument("--out", type=Path, default=None)
+    ap.add_argument("--tier", choices=["standard", "hard", "both"], default="standard")
+    ap.add_argument(
+        "--llm-transcripts", type=Path, help="Folder of graded, unsalted LLM JSONL episodes"
+    )
     a = ap.parse_args()
+    if a.n < 0 or a.repeats < 1 or a.concurrency < 1:
+        ap.error("n must be nonnegative; repeats and concurrency must be positive")
+    if a.tier != "standard" and a.split != "fresh":
+        ap.error("hard evaluation requires --split fresh (seeds 30000+)")
+    if a.tier != "standard":
+        from crucible.envs.supplygym.hard import enable_hard_tier
+
+        enable_hard_tier([p.strip() for p in a.policies.split(",")])
+    tiers = ["standard", "hard"] if a.tier == "both" else [a.tier]
+    out = a.out or Path(tempfile.mkdtemp(prefix="sg-eval-"))
+    for tier in tiers:
+        task = a.task if tier == "standard" else a.task.replace("@", "-hard@")
+        report(a, task, tier, out / tier)
+
+
+def report(a: argparse.Namespace, task: str, tier: str, out: Path) -> None:
     lo, hi = SPLITS[a.split]
     seeds = list(range(lo, hi))[: a.n or None]
-    policies = a.policies.split(",")
+    policies = [p.strip() for p in a.policies.split(",")]
     jobs = [
-        Job(task=a.task, policy=p, seed=s, repeat=r)
+        Job(task=task, policy=p, seed=s, repeat=r)
         for p in policies
         for s in seeds
         for r in range(a.repeats)
     ]
-    out = a.out or Path(tempfile.mkdtemp(prefix="sg-eval-"))
     results = asyncio.run(LocalExecutor(concurrency=a.concurrency).run(jobs, out))
     by: dict[str, dict[tuple[int, int], tuple[float, float, float]]] = {}
     for r in results:
+        if r.score.flags.get("env_error"):
+            raise ValueError(f"evaluation failed: {r.transcript_path}")
         b = r.score.breakdown
         by.setdefault(r.job.policy, {})[(r.seed, r.job.repeat)] = (
             r.score.total,
             b["profit"],
             b["delta_vs_ss"],
         )
-    print(f"task={a.task} split={a.split} n_seeds={len(seeds)} repeats={a.repeats}")
+    if a.llm_transcripts:
+        expected = {(s, r) for s in seeds for r in range(a.repeats)}
+        for path in sorted(a.llm_transcripts.rglob("*.jsonl")):
+            t = read_transcript(path)
+            h, f = t.header, t.footer
+            if h.task != task:
+                continue
+            key = (h.seed, h.repeat)
+            if key not in expected:
+                continue
+            if h.salted or h.scoring_hash != SCORING_HASH or f.score.flags.get("env_error"):
+                raise ValueError(f"incompatible LLM transcript: {path}")
+            name = f"llm:{h.policy}"
+            bucket = by.setdefault(name, {})
+            if key in bucket:
+                raise ValueError(f"duplicate LLM episode: {path}")
+            b = f.score.breakdown
+            bucket[key] = (f.score.total, b["profit"], b["delta_vs_ss"])
+        for name, bucket in by.items():
+            if name.startswith("llm:"):
+                if set(bucket) != expected:
+                    raise ValueError(f"{name}: LLM seeds/repeats do not match this evaluation")
+                policies.append(name)
+    print(f"tier={tier} task={task} split={a.split} n_seeds={len(seeds)} repeats={a.repeats}")
+    if not any(p.startswith("llm:") for p in policies):
+        print("LLM: not measured (supply --llm-transcripts to report paired results)")
     print(f"{'policy':14s} {'reward':>7s} {'profit':>9s} {'vs ss':>8s} {'95% CI':>20s} {'win':>5s}")
     for p in policies:
         rows = list(by[p].values())

@@ -138,6 +138,7 @@ class SupplyGymTask(Task):
     )
     # Simulator regime (`play.REGIMES`). Each regime is its own task, not a `difficulty`.
     regime: ClassVar[int] = 0
+    hard: ClassVar[bool] = False
 
     def __init__(self) -> None:
         self._play: Play | None = None
@@ -147,7 +148,7 @@ class SupplyGymTask(Task):
     ) -> Observation:
         # `difficulty` is unused: the regime is fixed per task (see `SupplyGymFreshTask`).
         # No salt (offline eval, golden scores) keeps the plain seed: `effective_seed(seed, "")`.
-        self._play = Play(seed, self.regime, salt or "")
+        self._play = Play(seed, self.regime, salt or "", hard=self.hard)
         return Observation(text=self.instruction(), data={"day": 0})
 
     def tools(self) -> list[ToolSpec]:

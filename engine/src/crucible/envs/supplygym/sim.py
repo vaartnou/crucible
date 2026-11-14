@@ -53,10 +53,12 @@ class SupplyEnv:
         salt: str = "",
         price_lo: float = 9.6,
         price_hi: float = 10.4,
+        hard: bool = False,
     ):
         assert signals in ("full", "no_news", "none", "placebo")
         self.world = make_world(world_seed, price_lo, price_hi)
         self.salt = salt
+        self.hard = hard
         self.rate_scale, self.k, self.signals, self.horizon = (
             rate_scale,
             decision_interval,
@@ -80,7 +82,9 @@ class SupplyEnv:
         if s is None:
             raise ValueError("seed required")
         self.seed_ = int(s)
-        self.tape = make_tape(self.world, self.seed_, self.rate_scale, self.horizon, self.salt)
+        self.tape = make_tape(
+            self.world, self.seed_, self.rate_scale, self.horizon, self.salt, hard=self.hard
+        )
         self._signal_view()
         self.day = 0
         self.onhand = float(7 * DEMAND_MEAN)
@@ -329,14 +333,17 @@ class SupplyEnv:
         if not self.use_ops:
             return
         if d % 7 == 0:
-            ref = max(0, d - 3)
+            ref = d - self.tape.risk_lag
+            # Before the first historical sample, hard risk sees healthy pre-episode
+            # conditions. Standard clamping is retained for exact score compatibility.
+            health = (
+                np.ones(self.NS) if self.hard and ref < 0 else self.tape.H[max(0, ref), : self.NS]
+            )
             for i in range(self.NS):
                 if self.tape.risk_stale[d, i]:
                     continue
                 self.risk[i] = float(
-                    np.clip(
-                        0.15 + 0.7 * (1 - self.tape.H[ref, i]) + self.tape.risk_noise[d, i], 0, 1
-                    )
+                    np.clip(0.15 + 0.7 * (1 - health[i]) + self.tape.risk_noise[d, i], 0, 1)
                 )
 
     # ------------------------------------------------------------------ step

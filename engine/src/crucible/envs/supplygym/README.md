@@ -51,6 +51,37 @@ tape is the plain seed.
   leftover inventory has no terminal value. Both are being fixed; see Decisions below.
 - Evaluate with `python -m crucible.envs.supplygym.evaluate` (paired deltas, bootstrap interval).
 
+## Hard evaluation (opt-in)
+
+Run the frozen policies on both tiers of the fresh seed bank, with separate reports and
+transcript directories:
+
+```bash
+uv run python -m crucible.envs.supplygym.evaluate --task supplygym-fresh@1 --split fresh --tier both --policies ss,reference --out runs/hard-comparison
+```
+
+`--tier` defaults to `standard`. Hard evaluation requires the fresh split (30000–30049);
+hard simulator resets also reject every seed below 30000. Training is unchanged. Standard
+task IDs, scoring constants, world parameters, policy weights and golden scores stay frozen.
+Hard task IDs (`supplygym-hard@1`, `supplygym-fresh-hard@1`) are registered only after explicit
+opt-in, so normal task discovery and exports remain unchanged. An LLM evaluation harness can
+call `hard.enable_hard_tier([policy_name])` before using the normal episode runner on those IDs.
+
+The simulator already permits overlapping independently sampled disruptions. In an additional
+20% of hard episodes, a direct supplier strike is forced to start with another disruption;
+20% is the injection probability, not the total overlap rate. Hard risk uses a health sample
+7 or 14 days old, plus the weekly update schedule and existing stale reports. Two extra false
+headlines per event fall within its lag window. Order acknowledgements, late orders and fill
+ratios retain their normal timing, providing operational warnings while risk catches up.
+Both default and reference scoring replays use exactly the same hard tape and salt.
+
+The reference is a frozen generalisation result, never retrained. Reports include its raw
+profit and paired delta against `ss`; clipped rewards alone do not establish difficulty.
+Use `--llm-transcripts PATH` to add graded, unsalted LLM JSONL episodes to each matching tier.
+They must cover the same seeds and repeats, use the corresponding task ID and scoring hash,
+and contain no environment errors or duplicates. Without them, LLM results are explicitly
+reported as unmeasured. No LLM gap or difficulty improvement is claimed without those runs.
+
 ## Decisions
 
 - 2026-11-14 — Reward is anchored at the default (s,S) rule, not at do-nothing: `reward = clip((profit - profit_ss) / max(profit_ref - profit_ss, 1000), 0, 1)`. Weeks the agent did not play run on the default controls, so no calls, `finish` at once, and all-zero controls all score exactly 0. Anchored at do-nothing, all-zero controls would have scored about 0.8. Raw profit, `delta_vs_ss` and `delta_vs_ref` are in the grade breakdown because the clipped reward hides small differences.
