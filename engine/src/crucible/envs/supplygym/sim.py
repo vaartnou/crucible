@@ -27,6 +27,9 @@ SHARE_SCALE = 4.0
 ACK_DAYS = 7  # supplier acknowledges the shipped quantity this many days after ordering (shortfall becomes visible)
 REVIEW = 3  # review period R (days) in the base-stock level
 Z = 1.65
+TERMINAL_VALUE = (
+    10.0  # stock on hand and already paid for in transit at the horizon is credited at about cost
+)
 GAP_DAYS = 0.5  # order-up-to level S sits this many days of demand above the reorder point s
 
 
@@ -101,6 +104,7 @@ class SupplyEnv:
             sales=0,
             lost=0,
         )
+        self._terminal_done = False
         self.decisions, self.days_log = [], []
         self._new_text = []
         return self._obs(), self._info([])
@@ -382,6 +386,11 @@ class SupplyEnv:
             texts += self._update_signals()
             self.day += 1
         truncated = self.day >= self.horizon
+        if truncated and not self._terminal_done:
+            self._terminal_done = True
+            self.tot["profit"] += TERMINAL_VALUE * (
+                self.onhand + sum(o["qty"] for o in self.orders)
+            )
         r = float(np.clip((self.tot["profit"] - profit0) / (1500.0 * self.k), -5, 5))
         self._new_text = texts
         return self._obs(), r, False, truncated, self._info(texts)
