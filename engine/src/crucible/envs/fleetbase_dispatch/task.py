@@ -314,6 +314,11 @@ class FleetbaseDispatch(Task):
         finally:
             if self._runtime is not None:
                 await self._runtime.aclose()
+                # The runtime records lease and client release failures instead of raising.
+                if self._runtime.cleanup_errors:
+                    self._cleanup_failed = True
+        if self._cleanup_failed:
+            raise BackendError("Fleetbase backend lease or connection cleanup failed")
 
     def deployment_bundle(self) -> DeploymentBundle:
         return make_bundle()

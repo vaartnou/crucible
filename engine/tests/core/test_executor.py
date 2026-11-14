@@ -155,6 +155,17 @@ async def test_infra_error_gives_up_after_max_retries(tmp_path: Path, flaky: typ
     assert read_transcript(result.transcript_path).footer.error == "InfraError"
 
 
+async def test_backend_unavailable_is_retried(tmp_path: Path, flaky: type[_Flaky]) -> None:
+    from crucible.backends import BackendUnavailable, LeaseConflict
+
+    flaky.fail_times = 1
+    flaky.error = BackendUnavailable
+    [result] = await LocalExecutor(max_retries=2).run([JOB], tmp_path)
+    assert result.retried == 1
+    assert result.stop_reason == "task_done"
+    assert issubclass(LeaseConflict, InfraError)
+
+
 async def test_other_errors_are_not_retried(tmp_path: Path, flaky: type[_Flaky]) -> None:
     flaky.fail_times = 99
     flaky.error = ValueError

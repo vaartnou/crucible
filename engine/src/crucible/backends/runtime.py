@@ -20,12 +20,18 @@ from uuid import uuid4
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
+from crucible.core.episode import InfraError
+
 
 class BackendError(RuntimeError):
     """A backend failed without exposing connection details or response contents."""
 
 
-class LeaseConflict(BackendError):
+class BackendUnavailable(BackendError, InfraError):
+    """A transient failure before the episode starts; the executor retries it."""
+
+
+class LeaseConflict(BackendUnavailable):
     """Another episode already owns the deployment."""
 
 
@@ -236,7 +242,7 @@ class HttpBackendRuntime:
                 pass
             if attempt + 1 < self._attempts:
                 await asyncio.sleep(self._interval)
-        raise BackendError("backend readiness check failed")
+        raise BackendUnavailable("backend readiness check failed")
 
     async def collect_artifacts(self, directory: Path) -> dict[str, str]:
         """Write private, sanitized evidence and return relative-name SHA256 hashes.

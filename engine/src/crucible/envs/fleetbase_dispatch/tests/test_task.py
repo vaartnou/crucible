@@ -104,3 +104,34 @@ async def test_pickup_prevents_reassignment_and_unreleased_request_cannot_create
     ).ok
     assert not (await task.step(ToolCall(name="create_order", args={"request_id": "unknown"}))).ok
     assert not (await task.step(ToolCall(name="advance", args={"minutes": -1}))).ok
+
+
+class FakeRuntime:
+    def __init__(self, errors: tuple[str, ...]) -> None:
+        self.cleanup_errors = errors
+        self.closes = 0
+
+    async def aclose(self) -> None:
+        self.closes += 1
+
+
+async def test_runtime_cleanup_errors_fail_task_cleanup() -> None:
+    from crucible.backends import BackendError, HttpBackendRuntime
+
+    task, adapter = prepared()
+    runtime = FakeRuntime(("OSError",))
+    task._runtime = cast(HttpBackendRuntime, cast(object, runtime))  # pyright: ignore[reportPrivateUsage]
+    with pytest.raises(BackendError, match="lease or connection cleanup"):
+        await task.aclose()
+    with pytest.raises(BackendError):
+        await task.aclose()
+    assert adapter.closes == runtime.closes == 1
+
+
+async def test_clean_runtime_cleanup_succeeds() -> None:
+    from crucible.backends import HttpBackendRuntime
+
+    task, _ = prepared()
+    task._runtime = cast(HttpBackendRuntime, cast(object, FakeRuntime(())))  # pyright: ignore[reportPrivateUsage]
+    await task.aclose()
+    await task.aclose()

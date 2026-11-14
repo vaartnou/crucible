@@ -67,7 +67,8 @@ with `episode_id`, resource `namespace`, and `isolation` kind.
 The default `ExclusiveLeaseProvider` uses a nonblocking POSIX `flock`. All local
 processes targeting the same installation must use the same private lock
 directory and `deployment_id`, even if they connect through different URLs. A
-conflict raises `LeaseConflict` before requests or mutations. Lock files stay on
+conflict raises `LeaseConflict` before requests or mutations. It and readiness
+failures are `BackendUnavailable`, an `InfraError` the executor retries. Lock files stay on
 disk after release: removing them could let two processes lock different inodes.
 The OS also releases the lock when a process exits.
 

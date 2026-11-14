@@ -161,12 +161,17 @@ class EpisodeSession:
                 except Exception as exc:
                     self.cleanup_errors.append(type(exc).__name__)
                     logger.exception("Episode resource cleanup failed")
-                    try:
-                        self._writer.path.with_suffix(".cleanup.json").write_text(
+                # Always rewrite or remove, so a file from an earlier attempt never outlives it.
+                diagnostics = self._writer.path.with_suffix(".cleanup.json")
+                try:
+                    if self.cleanup_errors:
+                        diagnostics.write_text(
                             json.dumps({"cleanup_errors": self.cleanup_errors}) + "\n"
                         )
-                    except OSError:
-                        logger.exception("Could not write cleanup diagnostics")
+                    else:
+                        diagnostics.unlink(missing_ok=True)
+                except OSError:
+                    logger.exception("Could not write cleanup diagnostics")
             if failure is not None:
                 raise failure
             return self._outcome

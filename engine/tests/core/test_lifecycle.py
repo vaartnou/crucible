@@ -122,7 +122,8 @@ async def test_cancelled_initialization_releases_before_propagating(tmp_path: Pa
     with pytest.raises(asyncio.CancelledError):
         await run
     assert task.release_count == 1
-    assert read_transcript(task.path).footer.error == "CancelledError"
+    # An interrupted job is not a finished one: resume must run it again.
+    assert not task.path.exists()
 
 
 async def test_cancelled_close_does_not_cancel_finalization(tmp_path: Path) -> None:
@@ -162,6 +163,16 @@ async def test_cleanup_failure_keeps_primary_error_and_records_diagnostic(tmp_pa
     assert json.loads(task.path.with_suffix(".cleanup.json").read_text()) == {
         "cleanup_errors": ["OSError"]
     }
+
+
+async def test_clean_close_removes_stale_cleanup_diagnostics(tmp_path: Path) -> None:
+    task, session, job = make_session(tmp_path)
+    stale = task.path.with_suffix(".cleanup.json")
+    stale.write_text(json.dumps({"cleanup_errors": ["OSError"]}) + "\n")
+    await session.start(policy_name="external", job=job)
+    await session.close()
+    assert session.cleanup_errors == []
+    assert not stale.exists()
 
 
 async def test_store_expiration_and_shutdown_release_resources(tmp_path: Path) -> None:

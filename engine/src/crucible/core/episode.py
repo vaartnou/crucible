@@ -85,9 +85,11 @@ async def run_episode(
             logging.getLogger(__name__).exception("Episode finalization failed after primary error")
         finally:
             writer.abort()
-            # Retryable attempts must not be mistaken for resumable completed jobs.
-            if isinstance(exc, InfraError) and not record_infra_errors:
-                writer.path.unlink(missing_ok=True)
+            # Only a retryable InfraError or an interruption (cancellation, KeyboardInterrupt)
+            # reaches here. Neither is a completed job, but close() has already renamed the
+            # transcript into place, so drop it or a resumed run would skip this job.
+            writer.path.unlink(missing_ok=True)
+            writer.path.with_suffix(".cleanup.json").unlink(missing_ok=True)
         raise
     return EpisodeResult(
         job=job,
