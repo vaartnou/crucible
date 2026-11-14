@@ -100,6 +100,7 @@ class SupplyEnv:
             expedite=0.0,
             switching=0.0,
             stockout=0.0,
+            terminal_credit=0.0,
             demand=0,
             sales=0,
             lost=0,
@@ -388,9 +389,10 @@ class SupplyEnv:
         truncated = self.day >= self.horizon
         if truncated and not self._terminal_done:
             self._terminal_done = True
-            self.tot["profit"] += TERMINAL_VALUE * (
+            self.tot["terminal_credit"] = TERMINAL_VALUE * (
                 self.onhand + sum(o["qty"] for o in self.orders)
             )
+            self.tot["profit"] += self.tot["terminal_credit"]
         r = float(np.clip((self.tot["profit"] - profit0) / (1500.0 * self.k), -5, 5))
         self._new_text = texts
         return self._obs(), r, False, truncated, self._info(texts)
@@ -482,6 +484,7 @@ class SupplyEnv:
         T = self.tot
         return dict(
             profit=T["profit"],
+            terminal_credit=T["terminal_credit"],
             service=T["sales"] / max(1, T["demand"]),
             revenue=T["revenue"],
             purchase=T["purchase"],

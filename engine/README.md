@@ -127,3 +127,15 @@ the generic checks as it is; change the game from there, keeping `hidden_strings
 and `checks` up to date.
 
 Tests: see [tests/README.md](tests/README.md).
+
+## SupplyGym comparison page
+
+Build an offline, single-file report from saved agent and same-seed default JSONL transcripts:
+
+```sh
+uv run --no-dev python -m crucible.why_lost --agent runs/agent.jsonl --default runs/ss.jsonl --out why-lost.html
+```
+
+The page shows divergent weeks, rule-based post hoc tags and counts, and a dollar waterfall
+from default profit to agent profit. It verifies the saved results by replay and does not call
+an LLM. Input requirements, tag definitions and limitations: [../docs/why-lost.md](../docs/why-lost.md).
