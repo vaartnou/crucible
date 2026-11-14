@@ -52,7 +52,7 @@ class FleetbaseDispatch(Task):
         timeout_sec=1800,
     )
     external_backend: ClassVar[bool] = True
-    scoring_hash: ClassVar[str] = "fleetbase-physical-economics-v1"
+    scoring_hash: ClassVar[str] = "fleetbase-physical-economics-v2"
     # Generic offline tests cannot start application services. Explicit simulator,
     # adapter and clean-deployment integration tests cover this environment.
     checks = TaskChecks(

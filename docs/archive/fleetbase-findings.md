@@ -1,3 +1,6 @@
+> **Archived.** Superseded by the v2 economics (`fleetbase-physical-economics-v2`).
+> These v1 pilot findings are kept for history only; do not compare them with v2 scores.
+
 # Fleetbase paired pilot findings
 
 **Evaluation inconclusive: the user stopped the pilot after 15 valid trials.**
@@ -76,7 +79,7 @@ invokes the published continuation. No operator receives an application optimize
 
 The engine dependency lock, deployment assets, packaged wheel and configuration
 fingerprints accompany the private export. Native API behavior and offline
-configuration are documented in [fleetbase-api-audit.md](fleetbase-api-audit.md).
+configuration are documented in [fleetbase-api-audit.md](../fleetbase-api-audit.md).
 
 ## Reference and infrastructure gates
 
@@ -88,7 +91,7 @@ An independently reset local reference reproduced identical world, semantic
 events and economics while native IDs changed. Active business records,
 including payload/tracking children, were zero after every local baseline and
 replay; only the bootstrap operator remained. These development worlds are not
-included in the pilot. See [fleetbase-validation.md](fleetbase-validation.md).
+included in the pilot. See [fleetbase-validation-v1.md](fleetbase-validation-v1.md).
 
 One earlier development attempt failed because Fleetbase's default HTTP throttle
 rejected rapid workflow calls, then interrupted grading and cleanup. Its
