@@ -51,6 +51,7 @@ async def test_tasks(client: httpx.AsyncClient) -> None:
     assert r.json() == [
         "guess@1",
         "oncall@1",
+        "oncall@2",
         "supplygym@1",
         "supplygym@2",
         "supplygym-cala@1",

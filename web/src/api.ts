@@ -156,6 +156,7 @@ export const api = {
     difficulty: number;
     policy: string;
     sessionId?: string | null;
+    replayPath?: string | null;
     upToStep?: number | null;
     inspectMinute?: number | null;
     revealSecret?: boolean;
@@ -168,6 +169,7 @@ export const api = {
       reveal_secret: String(Boolean(opts.revealSecret)),
     });
     if (opts.sessionId) q.set('session_id', opts.sessionId);
+    if (opts.replayPath) q.set('replay_path', opts.replayPath);
     if (opts.upToStep != null) q.set('up_to_step', String(opts.upToStep));
     if (opts.inspectMinute != null) q.set('inspect_minute', String(opts.inspectMinute));
     return request<BaselineComparePayload>(`/ui/compare?${q.toString()}`);

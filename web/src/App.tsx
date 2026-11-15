@@ -60,6 +60,7 @@ export const App: React.FC = () => {
 
   // Human Play state
   const [playSeed, setPlaySeed] = useState(0);
+  const [playTask, setPlayTask] = useState('oncall@1');
   const [playDifficulty, setPlayDifficulty] = useState(0);
   const [playSession, setPlaySession] = useState<WorkbenchSession | null>(null);
   const [playRightTab, setPlayRightTab] = useState<'mcp' | 'log'>('mcp');
@@ -272,7 +273,7 @@ export const App: React.FC = () => {
     try {
       const s = await api.createSession(
         {
-          task_id: 'oncall@1',
+          task_id: playTask,
           seed: seedOverride ?? playSeed,
           difficulty: diffOverride ?? playDifficulty,
           mode: 'human',
@@ -333,6 +334,7 @@ export const App: React.FC = () => {
       return {
         label: playSession ? `Human Operator (Seed ${playSession.seed})` : 'Human Operator',
         seed: playSession?.seed ?? playSeed,
+        task: playSession?.task ?? playTask,
         difficulty: playSession?.difficulty ?? playDifficulty,
         sessionId: playSession?.session_id ?? null,
         fog: playSession?.fog_state ?? EMPTY_FOG,
@@ -351,6 +353,7 @@ export const App: React.FC = () => {
       return {
         label: harborPayload ? `Harbor · seed ${harborPayload.header.seed}` : 'Harbor evaluation',
         seed: harborPayload?.header.seed ?? 0,
+        task: harborPayload?.header.task ?? 'oncall@1',
         difficulty: 0,
         sessionId: null,
         fog: harborPayload?.fog_state ?? EMPTY_FOG,
@@ -370,6 +373,7 @@ export const App: React.FC = () => {
         ? `${replayData.header.policy} (Seed ${replayData.header.seed})`
         : 'Transcript Replay',
       seed: replayData?.header.seed ?? 0,
+      task: replayData?.header.task ?? 'oncall@1',
       difficulty:
         replayData?.god_state && replayData.god_state.services.length <= 8 ? 1 : 0,
       sessionId: null,
@@ -388,6 +392,7 @@ export const App: React.FC = () => {
     modeTab,
     playSession,
     playSeed,
+    playTask,
     playDifficulty,
     playGodView,
     watchGodView,
@@ -400,11 +405,12 @@ export const App: React.FC = () => {
     setComparePolicy(pol);
     try {
       const base = await api.compareBaseline({
-        task: 'oncall@1',
+        task: activeView.task,
         seed: activeView.seed,
         difficulty: activeView.difficulty,
         policy: pol,
         sessionId: activeView.sessionId,
+        replayPath: modeTab === 'replay' ? replayData?.path : null,
         revealSecret,
       });
       setCompareBaseline(base);
@@ -432,8 +438,8 @@ export const App: React.FC = () => {
     return activeView.fog.changes;
   }, [activeView]);
 
-  const oncallTools = meta?.tools['oncall@1'] ?? [];
-  const oncallPolicies = meta?.policies['oncall@1'] ?? ['reference', 'graph_walk', 'loudest_alert'];
+  const oncallTools = meta?.tools[activeView.task] ?? [];
+  const oncallPolicies = meta?.policies[activeView.task] ?? ['reference', 'graph_walk', 'loudest_alert'];
 
   return (
     <div className="app-shell">
@@ -482,7 +488,9 @@ export const App: React.FC = () => {
         </nav>
 
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <button className="btn" disabled={modeTab !== 'play' || !playSession} title="Compare a manual episode with a built-in baseline" onClick={() => void openCompare()}>
+          <button className="btn"
+            disabled={modeTab === 'play' ? !playSession : modeTab !== 'replay' || !replayData?.has_matched_world}
+            title="Compare this same world with a built-in workflow" onClick={() => void openCompare()}>
             <GitCompare size={13} /> Compare
           </button>
           <button className="btn" onClick={() => setShowInstructions((v) => !v)}>
@@ -567,6 +575,11 @@ export const App: React.FC = () => {
         {/* Right HUD Controls per mode */}
         {modeTab === 'play' && (
           <div className="hud-group">
+            <select className="select" aria-label="Incident scenario" value={playTask}
+              onChange={(e) => setPlayTask(e.target.value)}>
+              <option value="oncall@1">Single incident</option>
+              <option value="oncall@2">Overlapping incidents</option>
+            </select>
             <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12 }}>
               Seed
               <input
@@ -583,8 +596,8 @@ export const App: React.FC = () => {
               value={playDifficulty}
               onChange={(e) => setPlayDifficulty(Number(e.target.value))}
             >
-              <option value={0}>Full Cluster (23 svcs, 6 faults)</option>
-              <option value={1}>Thin Slice (8 svcs, 2 faults)</option>
+              <option value={0}>Full Cluster (23 services)</option>
+              <option value={1}>Thin Slice (8 services)</option>
             </select>
             <button
               className="btn btn-primary"
@@ -722,6 +735,8 @@ export const App: React.FC = () => {
               <div className="scroll-body">
                 {playRightTab === 'mcp' ? (
                   <McpConsole
+                    key={playSession?.session_id}
+                    multipleReports={activeView.task === 'oncall@2'}
                     tools={oncallTools}
                     commandTemplates={meta?.command_templates ?? []}
                     faultKinds={meta?.fault_kinds ?? []}

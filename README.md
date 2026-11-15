@@ -1,6 +1,6 @@
 # Crucible
 
-Crucible runs deterministic interactive agent environments through typed tools and exports them to Harbor. The featured environment is **oncall@1**, a simulated on-call incident gym.
+Crucible runs deterministic interactive agent environments through typed tools and exports them to Harbor. The on-call incident gym includes **oncall@1** (single fault) and **oncall@2** ([overlapping incidents and a runbook comparison](docs/oncall-overlap.md)).
 
 The difficulty claim is experimental: bot gates and real model comparisons must be measured before calling the gym hard. Old incident and Fleetbase results remain in Git history; they are not oncall results.
 

@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 from crucible.core.scoring import Score, load_scoring_config
 from crucible.envs.oncall.model import PodSample, State, advance
-from crucible.envs.oncall.world import HORIZON, World
+from crucible.envs.oncall.world import HORIZON, Incident, World
 
 
 class Weights(BaseModel):
@@ -66,18 +66,9 @@ def grade(world: World, state: State) -> Score:
     baseline = _baseline_loss(world, max(HORIZON, probe.minute))
     actual = sum(loss(f) for f in probe.history if f[0].minute > 5)
     impact = max(0.0, min(1.0, 1 - actual / baseline)) if baseline else 0.0
-    report = state.report or {}
-    expected = {
-        "service": world.culprit,
-        "fault_kind": world.fault,
-        "change_id": world.change_id,
-        "remediation": "config_revert"
-        if world.fault in ("config_push", "pool_exhaustion", "retry_storm")
-        else "rollback",
-    }
-    if world.fault == "queue_backlog" and report.get("remediation") == "restart":
-        expected["remediation"] = "restart"
-    diagnosis = sum(report.get(key) == value for key, value in expected.items()) / 4
+    incidents = world.incidents or (Incident(world.culprit, world.fault, world.change_id),)
+    reports = state.incident_reports if world.incidents else [state.report or {}]
+    diagnosis = _diagnosis(incidents, reports or [])
     reward = max(
         0.0,
         min(
@@ -86,6 +77,7 @@ def grade(world: World, state: State) -> Score:
             - state.penalty,
         ),
     )
+
     return Score(
         total=reward,
         breakdown={
@@ -96,3 +88,38 @@ def grade(world: World, state: State) -> Score:
         },
         flags={"verified": verified, "diagnosis_correct": diagnosis == 1},
     )
+
+
+def _diagnosis(incidents: tuple[Incident, ...], reports: list[dict[str, str]]) -> float:
+    """Maximum one-to-one field matching, normalized to penalize missing/extra reports."""
+
+    def credit(incident: Incident, report: dict[str, str]) -> int:
+        remediation = (
+            "config_revert"
+            if incident.fault_kind in ("config_push", "pool_exhaustion", "retry_storm")
+            else "rollback"
+        )
+        if incident.fault_kind == "queue_backlog" and report.get("remediation") == "restart":
+            remediation = "restart"
+        expected = {
+            "service": incident.service,
+            "fault_kind": incident.fault_kind,
+            "change_id": incident.change_id,
+            "remediation": remediation,
+        }
+        return sum(report.get(key) == value for key, value in expected.items())
+
+    # At most two causes and eight reports in the overlap task. Each report and cause
+    # can contribute only once, regardless of order or repeated guesses.
+    scores = {0: 0}
+    for incident in incidents:
+        updated = dict(scores)
+        for mask, value in scores.items():
+            for index, report in enumerate(reports):
+                bit = 1 << index
+                if not mask & bit:
+                    updated[mask | bit] = max(
+                        updated.get(mask | bit, 0), value + credit(incident, report)
+                    )
+        scores = updated
+    return max(scores.values()) / (4 * max(len(incidents), len(reports)))

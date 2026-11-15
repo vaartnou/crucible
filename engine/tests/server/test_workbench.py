@@ -180,6 +180,44 @@ async def test_replay_scrubbing_cannot_validate_a_divergent_world(
         assert payload["god_state"] is None
 
 
+async def test_saved_comparison_uses_recorded_task_and_rejects_divergence(
+    client: httpx.AsyncClient, tmp_path: Path
+) -> None:
+    result = (
+        await LocalExecutor().run(
+            [Job(task="oncall@2", policy="incident_runbook", seed=0)], tmp_path / "overlap"
+        )
+    )[0]
+    params = {"replay_path": str(result.transcript_path), "policy": "incident_runbook"}
+    response = await client.get("/ui/compare", params=params)
+    assert response.status_code == 200
+    assert response.json()["task"] == "oncall@2"
+    assert response.json()["score"]["total"] == result.score.total
+    records = result.transcript_path.read_text().splitlines()
+    row = json.loads(records[1])
+    row["result"]["content"]["data"][0]["value"] = -999
+    records[1] = json.dumps(row)
+    result.transcript_path.write_text("\n".join(records) + "\n")
+    invalid = await client.get("/ui/compare", params=params)
+    assert invalid.status_code == 422
+
+
+async def test_overlap_session_reveals_both_causes_only_when_requested(
+    client: httpx.AsyncClient,
+) -> None:
+    response = await client.post(
+        "/ui/sessions?include_god=true", json={"task_id": "oncall@2", "seed": 0}
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["god_state"]["secret"] is None
+    revealed = await client.get(
+        f"/ui/sessions/{payload['session_id']}",
+        params={"include_god": True, "reveal_secret": True},
+    )
+    assert len(revealed.json()["god_state"]["secret"]["incidents"]) == 2
+
+
 async def test_live_policy_session_completes_and_grades(tmp_path: Path) -> None:
     settings = Settings(mode="api", runs_dir=tmp_path)
     app = create_app(settings)
@@ -300,5 +338,5 @@ async def test_built_spa_served_without_shadowing_api_routes(client: httpx.Async
     if _HAS_WEB_DIST:
         root = await client.get("/")
         assert root.status_code == 200
-        assert "Crucible // Oncall@1" in root.text
+        assert "Crucible // Oncall Incident" in root.text
         assert '<div id="root"></div>' in root.text

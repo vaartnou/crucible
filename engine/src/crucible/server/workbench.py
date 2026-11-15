@@ -35,6 +35,7 @@ from crucible.server.harbor_jobs import HarborJobs, LaunchHarborRequest
 from crucible.server.inspector import build_fog_state, build_god_state
 from crucible.server.settings import Settings
 from crucible.server.sources import (
+    comparison_world_from_file,
     list_harbor_containers,
     list_saved_runs,
     load_and_replay_file,
@@ -732,6 +733,7 @@ def add_workbench_routes(app: FastAPI, settings: Settings) -> WorkbenchManager:
         difficulty: int = Query(default=0, ge=0, le=1),
         policy: str = "graph_walk",
         session_id: str | None = None,
+        replay_path: str | None = None,
         up_to_step: int | None = None,
         inspect_minute: int | None = None,
         reveal_secret: bool = False,
@@ -745,6 +747,14 @@ def add_workbench_routes(app: FastAPI, settings: Settings) -> WorkbenchManager:
         salt: str | None = None
         if session_id and session_id in manager.entries:
             salt = manager.entries[session_id].salt
+        elif replay_path:
+            safe_path = _allowed_replay_path(Path(replay_path), extra_dirs)
+            try:
+                task, seed, difficulty, salt = await comparison_world_from_file(
+                    safe_path, extra_dirs=extra_dirs
+                )
+            except (FileNotFoundError, ValueError) as exc:
+                raise HTTPException(422, detail=str(exc)) from None
         return await run_baseline_comparison(
             task,
             seed,

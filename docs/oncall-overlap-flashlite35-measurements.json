@@ -1,0 +1,311 @@
+{
+  "task": "oncall@2",
+  "agent": [
+    "opencode",
+    "1.19.5",
+    "google/gemini-3.5-flash-lite"
+  ],
+  "environment_sha256": "bd964bf269d9df8cb074ea56703aba37d905d9abcd8ee05e557f2e438960d8f5",
+  "workflow": "incident_runbook",
+  "n": 10,
+  "expected_worlds": 10,
+  "missing_seeds": [],
+  "model_mean": 0.42983800975975134,
+  "workflow_mean": 0.872342795524373,
+  "mean_gap": 0.4425047857646217,
+  "seeds_gap_at_least_020": 9,
+  "historical_difficulty_gate_passed": true,
+  "excluded": [],
+  "rows": [
+    {
+      "seed": 0,
+      "model_reward": 0.4317810073596187,
+      "workflow_reward": 0.9004757202439811,
+      "gap": 0.46869471288436243,
+      "model_solved": true,
+      "model_calls": 79,
+      "workflow_calls": 18,
+      "transcript": "runs/harbor-jobs/oncall-overlap-flashlite35-10/oncall-2-seed-0__C96o96c/verifier/transcript.json",
+      "replay": {
+        "transcript": "runs/harbor-jobs/oncall-overlap-flashlite35-10/oncall-2-seed-0__C96o96c/verifier/transcript.json",
+        "task": "oncall@2",
+        "seed": 0,
+        "old_reward": 0.4317810073596187,
+        "reward": 0.4317810073596187,
+        "breakdown": {
+          "impact": 0.5017810073596187,
+          "verified": 1.0,
+          "diagnosis": 1.0,
+          "penalty": 0.07
+        },
+        "first_divergence": null,
+        "first_exact_divergence": 65,
+        "numeric_tolerance": 1e-12,
+        "comparable": true,
+        "old_scoring_hash": "a10b72cf44f6b8c1c6c3bb08d1392ce82a1c8bf0cbfecf58a64c5d499c2f4698",
+        "scoring_hash": "a10b72cf44f6b8c1c6c3bb08d1392ce82a1c8bf0cbfecf58a64c5d499c2f4698"
+      }
+    },
+    {
+      "seed": 1,
+      "model_reward": 0.015989820952661327,
+      "workflow_reward": 0.8862791447718511,
+      "gap": 0.8702893238191898,
+      "model_solved": false,
+      "model_calls": 80,
+      "workflow_calls": 18,
+      "transcript": "runs/harbor-jobs/oncall-overlap-flashlite35-10/oncall-2-seed-1__W4RFchX/verifier/transcript.json",
+      "replay": {
+        "transcript": "runs/harbor-jobs/oncall-overlap-flashlite35-10/oncall-2-seed-1__W4RFchX/verifier/transcript.json",
+        "task": "oncall@2",
+        "seed": 1,
+        "old_reward": 0.015989820952661327,
+        "reward": 0.015989820952661327,
+        "breakdown": {
+          "impact": 0.5449872761908267,
+          "verified": 1.0,
+          "diagnosis": 0.0,
+          "penalty": 0.42000000000000004
+        },
+        "first_divergence": null,
+        "first_exact_divergence": null,
+        "numeric_tolerance": 1e-12,
+        "comparable": true,
+        "old_scoring_hash": "a10b72cf44f6b8c1c6c3bb08d1392ce82a1c8bf0cbfecf58a64c5d499c2f4698",
+        "scoring_hash": "a10b72cf44f6b8c1c6c3bb08d1392ce82a1c8bf0cbfecf58a64c5d499c2f4698"
+      }
+    },
+    {
+      "seed": 2,
+      "model_reward": 0.6733137537401903,
+      "workflow_reward": 0.9487430078578298,
+      "gap": 0.2754292541176395,
+      "model_solved": true,
+      "model_calls": 57,
+      "workflow_calls": 18,
+      "transcript": "runs/harbor-jobs/oncall-overlap-flashlite35-10/oncall-2-seed-2__ZDpoMA5/verifier/transcript.json",
+      "replay": {
+        "transcript": "runs/harbor-jobs/oncall-overlap-flashlite35-10/oncall-2-seed-2__ZDpoMA5/verifier/transcript.json",
+        "task": "oncall@2",
+        "seed": 2,
+        "old_reward": 0.6733137537401903,
+        "reward": 0.6733137537401903,
+        "breakdown": {
+          "impact": 0.6733137537401903,
+          "verified": 1.0,
+          "diagnosis": 1.0,
+          "penalty": 0.0
+        },
+        "first_divergence": null,
+        "first_exact_divergence": null,
+        "numeric_tolerance": 1e-12,
+        "comparable": true,
+        "old_scoring_hash": "a10b72cf44f6b8c1c6c3bb08d1392ce82a1c8bf0cbfecf58a64c5d499c2f4698",
+        "scoring_hash": "a10b72cf44f6b8c1c6c3bb08d1392ce82a1c8bf0cbfecf58a64c5d499c2f4698"
+      }
+    },
+    {
+      "seed": 3,
+      "model_reward": 0.6052436472394167,
+      "workflow_reward": 0.7727367442642541,
+      "gap": 0.1674930970248374,
+      "model_solved": true,
+      "model_calls": 59,
+      "workflow_calls": 32,
+      "transcript": "runs/harbor-jobs/oncall-overlap-flashlite35-10/oncall-2-seed-3__aK3mma2/verifier/transcript.json",
+      "replay": {
+        "transcript": "runs/harbor-jobs/oncall-overlap-flashlite35-10/oncall-2-seed-3__aK3mma2/verifier/transcript.json",
+        "task": "oncall@2",
+        "seed": 3,
+        "old_reward": 0.6052436472394167,
+        "reward": 0.6052436472394167,
+        "breakdown": {
+          "impact": 0.6052436472394167,
+          "verified": 1.0,
+          "diagnosis": 1.0,
+          "penalty": 0.0
+        },
+        "first_divergence": null,
+        "first_exact_divergence": 48,
+        "numeric_tolerance": 1e-12,
+        "comparable": true,
+        "old_scoring_hash": "a10b72cf44f6b8c1c6c3bb08d1392ce82a1c8bf0cbfecf58a64c5d499c2f4698",
+        "scoring_hash": "a10b72cf44f6b8c1c6c3bb08d1392ce82a1c8bf0cbfecf58a64c5d499c2f4698"
+      }
+    },
+    {
+      "seed": 4,
+      "model_reward": 0.44567372516808285,
+      "workflow_reward": 0.8669027274156735,
+      "gap": 0.4212290022475907,
+      "model_solved": false,
+      "model_calls": 71,
+      "workflow_calls": 20,
+      "transcript": "runs/harbor-jobs/oncall-overlap-flashlite35-10/oncall-2-seed-4__JQxpD8i/verifier/transcript.json",
+      "replay": {
+        "transcript": "runs/harbor-jobs/oncall-overlap-flashlite35-10/oncall-2-seed-4__JQxpD8i/verifier/transcript.json",
+        "task": "oncall@2",
+        "seed": 4,
+        "old_reward": 0.44567372516808285,
+        "reward": 0.44567372516808285,
+        "breakdown": {
+          "impact": 0.5525075626800887,
+          "verified": 1.0,
+          "diagnosis": 0.6666666666666666,
+          "penalty": 0.07
+        },
+        "first_divergence": null,
+        "first_exact_divergence": null,
+        "numeric_tolerance": 1e-12,
+        "comparable": true,
+        "old_scoring_hash": "a10b72cf44f6b8c1c6c3bb08d1392ce82a1c8bf0cbfecf58a64c5d499c2f4698",
+        "scoring_hash": "a10b72cf44f6b8c1c6c3bb08d1392ce82a1c8bf0cbfecf58a64c5d499c2f4698"
+      }
+    },
+    {
+      "seed": 5,
+      "model_reward": 0.5299765647776178,
+      "workflow_reward": 0.8669022518765326,
+      "gap": 0.3369256870989148,
+      "model_solved": false,
+      "model_calls": 79,
+      "workflow_calls": 20,
+      "transcript": "runs/harbor-jobs/oncall-overlap-flashlite35-10/oncall-2-seed-5__2PRoYdk/verifier/transcript.json",
+      "replay": {
+        "transcript": "runs/harbor-jobs/oncall-overlap-flashlite35-10/oncall-2-seed-5__2PRoYdk/verifier/transcript.json",
+        "task": "oncall@2",
+        "seed": 5,
+        "old_reward": 0.5299765647776178,
+        "reward": 0.5299765647776178,
+        "breakdown": {
+          "impact": 0.5435657074642233,
+          "verified": 1.0,
+          "diagnosis": 0.875,
+          "penalty": 0.0
+        },
+        "first_divergence": null,
+        "first_exact_divergence": null,
+        "numeric_tolerance": 1e-12,
+        "comparable": true,
+        "old_scoring_hash": "a10b72cf44f6b8c1c6c3bb08d1392ce82a1c8bf0cbfecf58a64c5d499c2f4698",
+        "scoring_hash": "a10b72cf44f6b8c1c6c3bb08d1392ce82a1c8bf0cbfecf58a64c5d499c2f4698"
+      }
+    },
+    {
+      "seed": 6,
+      "model_reward": 0.7294876465273622,
+      "workflow_reward": 0.9494494956213279,
+      "gap": 0.21996184909396566,
+      "model_solved": true,
+      "model_calls": 47,
+      "workflow_calls": 18,
+      "transcript": "runs/harbor-jobs/oncall-overlap-flashlite35-10/oncall-2-seed-6__tLc7Q3X/verifier/transcript.json",
+      "replay": {
+        "transcript": "runs/harbor-jobs/oncall-overlap-flashlite35-10/oncall-2-seed-6__tLc7Q3X/verifier/transcript.json",
+        "task": "oncall@2",
+        "seed": 6,
+        "old_reward": 0.7294876465273622,
+        "reward": 0.7294876465273622,
+        "breakdown": {
+          "impact": 0.7294876465273622,
+          "verified": 1.0,
+          "diagnosis": 1.0,
+          "penalty": 0.0
+        },
+        "first_divergence": null,
+        "first_exact_divergence": null,
+        "numeric_tolerance": 1e-12,
+        "comparable": true,
+        "old_scoring_hash": "a10b72cf44f6b8c1c6c3bb08d1392ce82a1c8bf0cbfecf58a64c5d499c2f4698",
+        "scoring_hash": "a10b72cf44f6b8c1c6c3bb08d1392ce82a1c8bf0cbfecf58a64c5d499c2f4698"
+      }
+    },
+    {
+      "seed": 7,
+      "model_reward": 0.3557841731986397,
+      "workflow_reward": 0.7803974301023594,
+      "gap": 0.4246132569037197,
+      "model_solved": false,
+      "model_calls": 76,
+      "workflow_calls": 31,
+      "transcript": "runs/harbor-jobs/oncall-overlap-flashlite35-10/oncall-2-seed-7__7Hq69Jf/verifier/transcript.json",
+      "replay": {
+        "transcript": "runs/harbor-jobs/oncall-overlap-flashlite35-10/oncall-2-seed-7__7Hq69Jf/verifier/transcript.json",
+        "task": "oncall@2",
+        "seed": 7,
+        "old_reward": 0.3557841731986397,
+        "reward": 0.3557841731986397,
+        "breakdown": {
+          "impact": 0.611658565620151,
+          "verified": 1.0,
+          "diagnosis": 0.625,
+          "penalty": 0.21000000000000002
+        },
+        "first_divergence": null,
+        "first_exact_divergence": null,
+        "numeric_tolerance": 1e-12,
+        "comparable": true,
+        "old_scoring_hash": "a10b72cf44f6b8c1c6c3bb08d1392ce82a1c8bf0cbfecf58a64c5d499c2f4698",
+        "scoring_hash": "a10b72cf44f6b8c1c6c3bb08d1392ce82a1c8bf0cbfecf58a64c5d499c2f4698"
+      }
+    },
+    {
+      "seed": 8,
+      "model_reward": 0.0,
+      "workflow_reward": 0.884534368370264,
+      "gap": 0.884534368370264,
+      "model_solved": false,
+      "model_calls": 80,
+      "workflow_calls": 19,
+      "transcript": "runs/harbor-jobs/oncall-overlap-flashlite35-10/oncall-2-seed-8__jPuxHEs/verifier/transcript.json",
+      "replay": {
+        "transcript": "runs/harbor-jobs/oncall-overlap-flashlite35-10/oncall-2-seed-8__jPuxHEs/verifier/transcript.json",
+        "task": "oncall@2",
+        "seed": 8,
+        "old_reward": 0.0,
+        "reward": 0.0,
+        "breakdown": {
+          "impact": 0.0,
+          "verified": 0.0,
+          "diagnosis": 0.0,
+          "penalty": 0.0
+        },
+        "first_divergence": null,
+        "first_exact_divergence": 51,
+        "numeric_tolerance": 1e-12,
+        "comparable": true,
+        "old_scoring_hash": "a10b72cf44f6b8c1c6c3bb08d1392ce82a1c8bf0cbfecf58a64c5d499c2f4698",
+        "scoring_hash": "a10b72cf44f6b8c1c6c3bb08d1392ce82a1c8bf0cbfecf58a64c5d499c2f4698"
+      }
+    },
+    {
+      "seed": 9,
+      "model_reward": 0.5111297586339238,
+      "workflow_reward": 0.8670070647196568,
+      "gap": 0.355877306085733,
+      "model_solved": true,
+      "model_calls": 73,
+      "workflow_calls": 20,
+      "transcript": "runs/harbor-jobs/oncall-overlap-flashlite35-10/oncall-2-seed-9__yEunafB/verifier/transcript.json",
+      "replay": {
+        "transcript": "runs/harbor-jobs/oncall-overlap-flashlite35-10/oncall-2-seed-9__yEunafB/verifier/transcript.json",
+        "task": "oncall@2",
+        "seed": 9,
+        "old_reward": 0.5111297586339238,
+        "reward": 0.5111297586339238,
+        "breakdown": {
+          "impact": 0.5111297586339238,
+          "verified": 1.0,
+          "diagnosis": 1.0,
+          "penalty": 0.0
+        },
+        "first_divergence": null,
+        "first_exact_divergence": null,
+        "numeric_tolerance": 1e-12,
+        "comparable": true,
+        "old_scoring_hash": "a10b72cf44f6b8c1c6c3bb08d1392ce82a1c8bf0cbfecf58a64c5d499c2f4698",
+        "scoring_hash": "a10b72cf44f6b8c1c6c3bb08d1392ce82a1c8bf0cbfecf58a64c5d499c2f4698"
+      }
+    }
+  ]
+}

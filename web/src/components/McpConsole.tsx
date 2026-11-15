@@ -10,6 +10,7 @@ import type {
 } from '../types';
 
 interface McpConsoleProps {
+  multipleReports?: boolean;
   tools: ToolInfo[];
   commandTemplates: CommandTemplate[];
   faultKinds: string[];
@@ -37,6 +38,7 @@ const METRIC_NAMES = [
 ];
 
 export const McpConsole: React.FC<McpConsoleProps> = ({
+  multipleReports = false,
   tools,
   commandTemplates,
   faultKinds,
@@ -82,6 +84,7 @@ export const McpConsole: React.FC<McpConsoleProps> = ({
   const [repFault, setRepFault] = useState('');
   const [repChangeId, setRepChangeId] = useState('');
   const [repRemediation, setRepRemediation] = useState('');
+  const [savedReports, setSavedReports] = useState<Record<string, string>[]>([]);
   const [showRawResult, setShowRawResult] = useState(false);
 
   // Sync clicked service into active fields
@@ -144,6 +147,7 @@ export const McpConsole: React.FC<McpConsoleProps> = ({
       case 'wait':
         return { minutes: waitMinutes };
       case 'resolve':
+        if (multipleReports) return { reports: savedReports };
         return {
           report: {
             service: repService,
@@ -551,6 +555,28 @@ export const McpConsole: React.FC<McpConsoleProps> = ({
 
             {activeTool === 'resolve' && (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                {multipleReports && (
+                  <div style={{ gridColumn: '1 / -1', fontSize: 12 }}>
+                    <p>Add each diagnosed cause, then close after verifying recovery.</p>
+                    {savedReports.map((report, index) => (
+                      <div key={index}>
+                        {report.service} · {report.fault_kind} · {report.change_id}{' '}
+                        <button className="btn" type="button" onClick={() => setSavedReports(
+                          (reports) => reports.filter((_, i) => i !== index),
+                        )}>Remove</button>
+                      </div>
+                    ))}
+                    <button className="btn" type="button"
+                      disabled={!repService || !repFault || !repChangeId || !repRemediation || savedReports.length >= 8}
+                      onClick={() => {
+                        setSavedReports((reports) => [...reports, {
+                          service: repService, fault_kind: repFault,
+                          change_id: repChangeId, remediation: repRemediation,
+                        }]);
+                        setRepService(''); setRepFault(''); setRepChangeId(''); setRepRemediation('');
+                      }}>Add diagnosis</button>
+                  </div>
+                )}
                 <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11 }}>
                   Culprit Service
                   <input

@@ -20,6 +20,15 @@ def prepare_export(root: Path) -> None:
     (task / "task.toml").write_text('[metadata]\ntask_ref = "oncall@1"\nseed = 0\n')
 
 
+def test_overlap_exports_are_available_to_watch(tmp_path: Path) -> None:
+    prepare_export(tmp_path)
+    task = tmp_path / "overlap-export" / "oncall-2-seed-0"
+    task.mkdir(parents=True)
+    (task / "task.toml").write_text('[metadata]\ntask_ref = "oncall@2"\nseed = 0\n')
+    jobs = HarborJobs(Settings(harbor_exports_dir=tmp_path))
+    assert {row["name"] for row in jobs.exports()} == {"oncall-export", "overlap-export"}
+
+
 async def test_direct_model_sessions_are_rejected(tmp_path: Path) -> None:
     app = create_app(Settings(runs_dir=tmp_path))
     async with httpx.AsyncClient(

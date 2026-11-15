@@ -75,6 +75,11 @@ function summarizeCall(step: SerializedStep): {
     };
   }
   if (name === 'resolve') {
+    if (Array.isArray(args.reports)) return {
+      label: `resolve(${args.reports.map((r: Record<string, unknown>) => String(r.service ?? '?')).join(', ')})`,
+      kindBadge: { text: 'RESOLVE', cls: 'badge-ok' },
+      targetService: null,
+    };
     const rep = (args.report ?? {}) as Record<string, unknown>;
     const svc = String(rep.service ?? '');
     return {
