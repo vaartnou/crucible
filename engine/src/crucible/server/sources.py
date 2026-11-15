@@ -52,6 +52,7 @@ class ParsedTranscript:
         path: str,
         grade_extra: dict[str, Any] | None = None,
         agent_logs: str | None = None,
+        agent_label: str | None = None,
     ) -> None:
         self.header = header
         self.steps = steps
@@ -61,6 +62,7 @@ class ParsedTranscript:
         self.path = path
         self.grade_extra = grade_extra or {}
         self.agent_logs = agent_logs
+        self.agent_label = agent_label
 
 
 def parse_jsonl_lines(
@@ -128,6 +130,15 @@ def _parse_harbor_transcript_file(path: Path) -> ParsedTranscript | None:
             pass
 
     agent_logs = _read_sibling_agent_logs(path.parent.parent / "agent")
+    agent_label: str | None = None
+    try:
+        config = _as_dict(json.loads((path.parent.parent / "config.json").read_text())) or {}
+        agent = _as_dict(config.get("agent")) or {}
+        name, model = agent.get("name"), agent.get("model_name")
+        if name:
+            agent_label = f"{name} · {model}" if model else str(name)
+    except OSError, ValueError:
+        pass
     return ParsedTranscript(
         header=header,
         steps=steps,
@@ -137,6 +148,7 @@ def _parse_harbor_transcript_file(path: Path) -> ParsedTranscript | None:
         path=str(path),
         grade_extra=grade_extra,
         agent_logs=agent_logs,
+        agent_label=agent_label,
     )
 
 
@@ -189,7 +201,10 @@ def _index_export_salts(roots: Sequence[Path]) -> dict[tuple[str, int], list[tup
     """Map `(task_ref, seed)` -> list of `(export_folder_name, salt)` found in Harbor exports."""
     mapping: dict[tuple[str, int], list[tuple[str, str]]] = {}
     for root in roots:
-        for compose in root.glob("*/*/environment/docker-compose.yaml"):
+        for compose in [
+            *root.glob("*/*/environment/docker-compose.yaml"),
+            *root.glob("*/environment/docker-compose.yaml"),
+        ]:
             try:
                 data: Any = yaml.safe_load(compose.read_text(encoding="utf-8"))
                 env = data["services"]["mcp-server"]["environment"]
@@ -203,13 +218,24 @@ def _index_export_salts(roots: Sequence[Path]) -> dict[tuple[str, int], list[tup
     return mapping
 
 
-def _scan_runs_sync(extra_dirs: Sequence[Path]) -> list[dict[str, Any]]:
-    roots = _search_roots(extra_dirs)
+def _scan_runs_sync(
+    extra_dirs: Sequence[Path], *, harbor_only: bool = False
+) -> list[dict[str, Any]]:
+    roots = (
+        [p.resolve() for p in extra_dirs if p.is_dir()]
+        if harbor_only
+        else _search_roots(extra_dirs)
+    )
     items: list[tuple[float, dict[str, Any]]] = []
     seen_files: set[Path] = set()
 
     for root in roots:
-        for pattern in ("**/*.jsonl.tmp", "**/*.jsonl", "**/verifier/transcript.json"):
+        patterns = (
+            ("**/verifier/transcript.json",)
+            if harbor_only
+            else ("**/*.jsonl.tmp", "**/*.jsonl", "**/verifier/transcript.json")
+        )
+        for pattern in patterns:
             for fpath in root.glob(pattern):
                 try:
                     resolved = fpath.resolve()
@@ -268,7 +294,7 @@ def _scan_runs_sync(extra_dirs: Sequence[Path]) -> list[dict[str, Any]]:
                             "source_kind": parsed.source_kind,
                             "live": parsed.live,
                             "task": parsed.header.task,
-                            "policy": parsed.header.policy,
+                            "policy": parsed.agent_label or parsed.header.policy,
                             "seed": parsed.header.seed,
                             "salted": parsed.header.salted,
                             "steps": len(parsed.steps),
@@ -287,8 +313,10 @@ def _scan_runs_sync(extra_dirs: Sequence[Path]) -> list[dict[str, Any]]:
     return [row for _, row in items[:250]]
 
 
-async def list_saved_runs(extra_dirs: Sequence[Path]) -> list[dict[str, Any]]:
-    return await asyncio.to_thread(_scan_runs_sync, extra_dirs)
+async def list_saved_runs(
+    extra_dirs: Sequence[Path], *, harbor_only: bool = False
+) -> list[dict[str, Any]]:
+    return await asyncio.to_thread(_scan_runs_sync, extra_dirs, harbor_only=harbor_only)
 
 
 def _load_parsed_sync(path: Path) -> ParsedTranscript:
@@ -419,6 +447,7 @@ async def replay_parsed_transcript(
         "salt_status": salt_status,
         "has_matched_world": matched_god is not None,
         "agent_logs": parsed.agent_logs,
+        "agent_label": parsed.agent_label,
         "_matched_salt": matched_salt_value,
     }
 

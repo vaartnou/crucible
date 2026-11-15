@@ -253,7 +253,7 @@ export interface WorkbenchSession {
   seed: number;
   difficulty: number;
   salted: boolean;
-  mode: 'human' | 'policy' | 'llm' | 'mcp';
+  mode: 'human' | 'policy' | 'mcp';
   actor_label: string;
   instruction: string;
   status: 'waiting' | 'running' | 'paused' | 'grading' | 'closed';
@@ -360,4 +360,22 @@ export interface BaselineComparePayload {
   stop_reason: string;
   fog_state: FogState;
   god_state: GodState | null;
+}
+
+export interface HarborJob {
+  id: string;
+  path: string;
+  status: 'running' | 'completed' | 'failed' | 'unknown';
+  agent: string;
+  model: string | null;
+  completed_trials: number;
+  total_trials: number | null;
+}
+
+export interface HarborJobsState {
+  jobs_dir: string;
+  exports_dir: string;
+  harbor_available: boolean;
+  exports: Array<{ id: string; name: string; tasks: number }>;
+  jobs: HarborJob[];
 }

@@ -3,26 +3,22 @@ import {
   Activity,
   BookOpen,
   Bot,
-  Box,
   Clock,
-  Copy,
   Film,
   Flame,
   Gamepad2,
   GitCompare,
   Pause,
   Play,
-  Plug,
   RefreshCw,
   RotateCcw,
-  SkipForward,
-  Square,
 } from 'lucide-react';
 import { api } from './api';
 import { ActionTimeline, extractTargetService } from './components/ActionTimeline';
 import { ClusterGraph } from './components/ClusterGraph';
 import { CompareDrawer } from './components/CompareDrawer';
 import { InspectorTabs } from './components/InspectorTabs';
+import { HarborWatchPanel } from './components/HarborWatchPanel';
 import { McpConsole } from './components/McpConsole';
 import type {
   BaselineComparePayload,
@@ -51,7 +47,7 @@ const EMPTY_FOG: FogState = {
 
 export const App: React.FC = () => {
   const [meta, setMeta] = useState<WorkbenchMeta | null>(null);
-  const [modeTab, setModeTab] = useState<'play' | 'watch' | 'replay'>('play');
+  const [modeTab, setModeTab] = useState<'play' | 'watch' | 'replay'>(() => new URLSearchParams(window.location.search).has('trial') ? 'replay' : 'watch');
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
   const [showInstructions, setShowInstructions] = useState(false);
 
@@ -70,33 +66,19 @@ export const App: React.FC = () => {
   const [playBusy, setPlayBusy] = useState(false);
   const [stagedRevert, setStagedRevert] = useState<ChangeRecord | null>(null);
 
-  // Live Watch state (`policy` | `llm` | `harbor` | `mcp`)
-  const [watchSource, setWatchSource] = useState<'runner' | 'harbor' | 'mcp'>('runner');
-  const [watchRunnerKind, setWatchRunnerKind] = useState<'policy' | 'llm'>('policy');
-  const [watchSeed, setWatchSeed] = useState(2);
-  const [watchDifficulty, setWatchDifficulty] = useState(0);
-  const [watchPolicy, setWatchPolicy] = useState('reference');
-  const [watchModel, setWatchModel] = useState('gemini-3.8-flash');
-  const [watchBaseUrl, setWatchBaseUrl] = useState(
-    'https://generativelanguage.googleapis.com/v1beta/openai/',
-  );
-  const [watchApiKeyEnv, setWatchApiKeyEnv] = useState('GOOGLE_GENERATIVE_AI_API_KEY');
-  const [watchDelayMs, setWatchDelayMs] = useState(550);
-  const [watchSession, setWatchSession] = useState<WorkbenchSession | null>(null);
-
   // Live Harbor container state
   const [harborStatus, setHarborStatus] = useState<{
     docker_available: boolean;
     error: string | null;
     containers: HarborContainerInfo[];
   }>({ docker_available: true, error: null, containers: [] });
-  const [selectedContainerId, setSelectedContainerId] = useState<string | null>(null);
+  const [selectedContainerId, setSelectedContainerId] = useState<string | null>(() => new URLSearchParams(window.location.search).get('container'));
   const [harborPayload, setHarborPayload] = useState<ReplayPayload | null>(null);
 
   // Replay & Saved Runs state
   const [savedRuns, setSavedRuns] = useState<SavedRunItem[]>([]);
   const [runFilter, setRunFilter] = useState('');
-  const [selectedRunPath, setSelectedRunPath] = useState<string | null>(null);
+  const [selectedRunPath, setSelectedRunPath] = useState<string | null>(() => new URLSearchParams(window.location.search).get('trial'));
   const [replayData, setReplayData] = useState<ReplayPayload | null>(null);
   const [scrubStep, setScrubStep] = useState<number | null>(null);
   const [replayPlaying, setReplayPlaying] = useState(false);
@@ -106,7 +88,7 @@ export const App: React.FC = () => {
   const [comparePolicy, setComparePolicy] = useState('graph_walk');
   const [compareBaseline, setCompareBaseline] = useState<BaselineComparePayload | null>(null);
 
-  // Initial load: metadata + start first Human Play episode
+  // Restore a bookmarked run without creating another episode.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -114,12 +96,13 @@ export const App: React.FC = () => {
         const m = await api.getMeta();
         if (cancelled) return;
         setMeta(m);
-        const sess = await api.createSession(
-          { task_id: 'oncall@1', seed: 0, difficulty: 0, mode: 'human' },
-          false,
-          false,
-        );
-        if (!cancelled) setPlaySession(sess);
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('trial')) {
+          setSelectedRunPath(params.get('trial'));
+          setModeTab('replay');
+        } else if (params.get('container')) {
+          setSelectedContainerId(params.get('container'));
+        }
       } catch (err) {
         if (!cancelled) setErrorBanner(String(err));
       }
@@ -128,6 +111,22 @@ export const App: React.FC = () => {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (modeTab === 'play' && !playSession && !playBusy) {
+      void startNewPlayEpisode(playSeed, playDifficulty);
+    }
+  }, [modeTab]);
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    url.searchParams.delete('run');
+    if (modeTab === 'replay' && selectedRunPath) url.searchParams.set('trial', selectedRunPath);
+    else url.searchParams.delete('trial');
+    if (modeTab === 'watch' && selectedContainerId) url.searchParams.set('container', selectedContainerId);
+    else url.searchParams.delete('container');
+    window.history.replaceState(null, '', url);
+  }, [modeTab, selectedRunPath, selectedContainerId]);
 
   // Re-fetch active play session when God View / Reveal Secret / Inspect Minute changes
   useEffect(() => {
@@ -149,57 +148,19 @@ export const App: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playGodView, revealSecret, inspectMinute, modeTab]);
 
-  // Poll live watch session when active
-  useEffect(() => {
-    if (
-      modeTab !== 'watch' ||
-      watchSource === 'harbor' ||
-      !watchSession ||
-      (watchSession.status === 'closed' && inspectMinute === null)
-    ) {
-      return;
-    }
-    let cancelled = false;
-    const tick = async () => {
-      try {
-        const updated = await api.getSession(watchSession.session_id, {
-          includeGod: watchGodView,
-          revealSecret,
-          inspectMinute,
-        });
-        if (!cancelled) setWatchSession(updated);
-      } catch {
-        // ignore transient poll error
-      }
-    };
-    void tick();
-    if (watchSession.status === 'closed') return;
-    const timer = window.setInterval(() => void tick(), 350);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    modeTab,
-    watchSource,
-    watchSession?.session_id,
-    watchSession?.status,
-    watchGodView,
-    revealSecret,
-    inspectMinute,
-  ]);
-
   // Poll Harbor containers when in Harbor watch mode
   useEffect(() => {
-    if (modeTab !== 'watch' || watchSource !== 'harbor') return;
+    if (modeTab !== 'watch') return;
     let cancelled = false;
     const pollList = async () => {
       try {
         const res = await api.listHarborContainers();
         if (cancelled) return;
         setHarborStatus(res);
-        if (!selectedContainerId && res.containers.length > 0) {
+        if (selectedContainerId && !res.containers.some(c => c.container_id === selectedContainerId)) {
+          setSelectedContainerId(null);
+          setHarborPayload(null);
+        } else if (!selectedContainerId && res.containers.length > 0) {
           setSelectedContainerId(res.containers[0]!.container_id);
         }
       } catch (err) {
@@ -214,11 +175,11 @@ export const App: React.FC = () => {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [modeTab, watchSource, selectedContainerId]);
+  }, [modeTab, selectedContainerId]);
 
   // Tail selected Harbor container
   useEffect(() => {
-    if (modeTab !== 'watch' || watchSource !== 'harbor' || !selectedContainerId) return;
+    if (modeTab !== 'watch' || !selectedContainerId) return;
     let cancelled = false;
     const pollContainer = async () => {
       try {
@@ -228,7 +189,7 @@ export const App: React.FC = () => {
         });
         if (!cancelled) setHarborPayload(data);
       } catch {
-        // container may have exited after finishing
+        // The container list will clear an exited trial; its saved files appear in Runs.
       }
     };
     void pollContainer();
@@ -237,7 +198,7 @@ export const App: React.FC = () => {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [modeTab, watchSource, selectedContainerId, inspectMinute, revealSecret]);
+  }, [modeTab, selectedContainerId, inspectMinute, revealSecret]);
 
   // Load saved runs list in Replay tab (and auto-refresh for live `.jsonl.tmp` runs)
   const refreshRuns = useCallback(async () => {
@@ -366,53 +327,6 @@ export const App: React.FC = () => {
     }
   };
 
-  const launchWatchSession = async (modeOverride?: 'policy' | 'llm' | 'mcp') => {
-    setErrorBanner(null);
-    setInspectMinute(null);
-    setSelectedService(null);
-    const chosenMode = modeOverride ?? (watchSource === 'mcp' ? 'mcp' : watchRunnerKind);
-    try {
-      const sess = await api.createSession(
-        {
-          task_id: 'oncall@1',
-          seed: watchSeed,
-          difficulty: watchDifficulty,
-          mode: chosenMode,
-          policy: watchPolicy,
-          model: watchModel,
-          base_url: watchBaseUrl,
-          api_key_env: watchApiKeyEnv,
-          step_delay_ms: watchDelayMs,
-          auto_run: true,
-        },
-        watchGodView,
-        revealSecret,
-      );
-      setWatchSession(sess);
-    } catch (err) {
-      setErrorBanner(String(err));
-    }
-  };
-
-  const controlWatch = async (
-    action: 'pause' | 'resume' | 'step_once' | 'set_speed' | 'close',
-    delayMs?: number,
-  ) => {
-    if (!watchSession) return;
-    try {
-      const s = await api.controlSession(
-        watchSession.session_id,
-        action,
-        watchGodView,
-        revealSecret,
-        delayMs,
-      );
-      setWatchSession(s);
-    } catch (err) {
-      setErrorBanner(String(err));
-    }
-  };
-
   // Active view projection across modes
   const activeView = useMemo(() => {
     if (modeTab === 'play') {
@@ -434,43 +348,21 @@ export const App: React.FC = () => {
       };
     }
     if (modeTab === 'watch') {
-      if (watchSource === 'harbor') {
-        return {
-          label: harborPayload
-            ? `Harbor ${harborPayload.compose_project || harborPayload.container_id} (Seed ${harborPayload.header.seed})`
-            : 'Harbor Live Container',
-          seed: harborPayload?.header.seed ?? 0,
-          difficulty: 0,
-          sessionId: null,
-          fog: harborPayload?.fog_state ?? EMPTY_FOG,
-          god: harborPayload?.god_state ?? null,
-          showGod: watchGodView,
-          toggleGod: () => setWatchGodView((v) => !v),
-          steps: harborPayload?.steps ?? [],
-          allSteps: harborPayload?.all_steps ?? [],
-          score: harborPayload?.footer?.score ?? null,
-          status: harborPayload?.live ? 'running' : 'closed',
-          maxSteps: 80,
-          agentLogs: harborPayload?.agent_logs ?? null,
-        };
-      }
       return {
-        label: watchSession
-          ? `${watchSession.actor_label} (Seed ${watchSession.seed})`
-          : 'Agent Watch',
-        seed: watchSession?.seed ?? watchSeed,
-        difficulty: watchSession?.difficulty ?? watchDifficulty,
-        sessionId: watchSession?.session_id ?? null,
-        fog: watchSession?.fog_state ?? EMPTY_FOG,
-        god: watchSession?.god_state ?? null,
+        label: harborPayload ? `Harbor · seed ${harborPayload.header.seed}` : 'Harbor evaluation',
+        seed: harborPayload?.header.seed ?? 0,
+        difficulty: 0,
+        sessionId: null,
+        fog: harborPayload?.fog_state ?? EMPTY_FOG,
+        god: harborPayload?.god_state ?? null,
         showGod: watchGodView,
-        toggleGod: () => setWatchGodView((v) => !v),
-        steps: watchSession?.steps ?? [],
-        allSteps: watchSession?.all_steps ?? [],
-        score: watchSession?.outcome?.score ?? null,
-        status: watchSession?.status ?? 'waiting',
-        maxSteps: watchSession?.max_steps ?? 80,
-        agentLogs: null,
+        toggleGod: () => setWatchGodView(v => !v),
+        steps: harborPayload?.steps ?? [],
+        allSteps: harborPayload?.all_steps ?? [],
+        score: harborPayload?.footer?.score ?? null,
+        status: !harborPayload ? 'waiting' : harborPayload.live ? 'running' : 'closed',
+        maxSteps: 80,
+        agentLogs: harborPayload?.agent_logs ?? null,
       };
     }
     return {
@@ -498,10 +390,6 @@ export const App: React.FC = () => {
     playSeed,
     playDifficulty,
     playGodView,
-    watchSource,
-    watchSession,
-    watchSeed,
-    watchDifficulty,
     watchGodView,
     harborPayload,
     replayData,
@@ -556,9 +444,9 @@ export const App: React.FC = () => {
             <Flame size={15} />
           </div>
           <div>
-            <div style={{ fontSize: 13.5 }}>CRUCIBLE // ONCALL@1</div>
+            <div style={{ fontSize: 13.5 }}>Crucible</div>
             <div style={{ fontSize: 10.5, color: 'var(--text-2)', fontWeight: 400 }}>
-              Incident Gym, MCP Console &amp; Live Agent Evaluation Workbench
+              Oncall evaluation
             </div>
           </div>
         </div>
@@ -571,7 +459,7 @@ export const App: React.FC = () => {
               setInspectMinute(null);
             }}
           >
-            <Gamepad2 size={14} /> Human Play (MCP)
+            <Gamepad2 size={14} /> Play
           </button>
           <button
             className={`mode-tab ${modeTab === 'watch' ? 'active' : ''}`}
@@ -580,7 +468,7 @@ export const App: React.FC = () => {
               setInspectMinute(null);
             }}
           >
-            <Bot size={14} /> Live Agent Watch
+            <Bot size={14} /> Watch
           </button>
           <button
             className={`mode-tab ${modeTab === 'replay' ? 'active' : ''}`}
@@ -589,16 +477,16 @@ export const App: React.FC = () => {
               setInspectMinute(null);
             }}
           >
-            <Film size={14} /> Transcripts &amp; Replay
+            <Film size={14} /> Runs
           </button>
         </nav>
 
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <button className="btn btn-primary" onClick={() => void openCompare()}>
-            <GitCompare size={13} /> Compare vs `{comparePolicy}`
+          <button className="btn" disabled={modeTab !== 'play' || !playSession} title="Compare a manual episode with a built-in baseline" onClick={() => void openCompare()}>
+            <GitCompare size={13} /> Compare
           </button>
           <button className="btn" onClick={() => setShowInstructions((v) => !v)}>
-            <BookOpen size={13} /> Task Rules
+            <BookOpen size={13} /> Help
           </button>
         </div>
       </header>
@@ -624,7 +512,7 @@ export const App: React.FC = () => {
       )}
 
       {/* Collapsible Task Instructions */}
-      {showInstructions && playSession && (
+      {showInstructions && (
         <div
           style={{
             padding: '10px 16px',
@@ -633,13 +521,13 @@ export const App: React.FC = () => {
           }}
         >
           <pre className="code-block" style={{ maxHeight: 150 }}>
-            {playSession.instruction}
+            {playSession?.instruction ?? 'Investigate the incident, repair the affected service, and verify recovery. Every tool call advances simulated time.'}
           </pre>
         </div>
       )}
 
       {/* Mode-Specific HUD Strip */}
-      <div className="hud-bar">
+      {!(modeTab === 'watch' && !harborPayload) && <div className="hud-bar">
         <div className="hud-group">
           <div className="stat-pill">
             <Clock size={13} color="var(--cyan)" />
@@ -658,7 +546,7 @@ export const App: React.FC = () => {
           <div className="stat-pill">
             {activeView.status === 'running' && <span className="live-dot" />}
             <span className="label">Status</span>
-            <span className="val">{activeView.status.toUpperCase()}</span>
+            <span className="val">{activeView.status === 'closed' ? 'Completed' : activeView.status}</span>
           </div>
           {activeView.score && (
             <div
@@ -670,10 +558,7 @@ export const App: React.FC = () => {
                 {activeView.score.total.toFixed(4)}
               </span>
               <span className="mono" style={{ fontSize: 10.5, color: 'var(--text-1)' }}>
-                (imp {(activeView.score.breakdown.impact ?? 0).toFixed(2)} · ver{' '}
-                {activeView.score.flags.verified ? '✓' : '✗'} · diag{' '}
-                {((activeView.score.breakdown.diagnosis ?? 0) * 100).toFixed(0)}% · pen -
-                {(activeView.score.breakdown.penalty ?? 0).toFixed(2)})
+                {activeView.score.flags.verified ? 'Recovery verified' : 'Recovery unverified'}
               </span>
             </div>
           )}
@@ -727,46 +612,6 @@ export const App: React.FC = () => {
           </div>
         )}
 
-        {modeTab === 'watch' && watchSource === 'runner' && watchSession && (
-          <div className="hud-group">
-            {watchSession.status !== 'closed' && (
-              <>
-                {watchSession.paused ? (
-                  <button className="btn btn-emerald" onClick={() => void controlWatch('resume')}>
-                    <Play size={13} /> Resume
-                  </button>
-                ) : (
-                  <button className="btn btn-action" onClick={() => void controlWatch('pause')}>
-                    <Pause size={13} /> Pause
-                  </button>
-                )}
-                <button className="btn" onClick={() => void controlWatch('step_once')}>
-                  <SkipForward size={13} /> Step Once
-                </button>
-                <button className="btn btn-danger" onClick={() => void controlWatch('close')}>
-                  <Square size={12} /> Stop &amp; Grade
-                </button>
-              </>
-            )}
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5 }}>
-              Pace {watchDelayMs}ms
-              <input
-                type="range"
-                min={0}
-                max={1500}
-                step={50}
-                value={watchDelayMs}
-                onChange={(e) => {
-                  const v = Number(e.target.value);
-                  setWatchDelayMs(v);
-                  void controlWatch('set_speed', v);
-                }}
-                style={{ width: 85, accentColor: 'var(--cyan)' }}
-              />
-            </label>
-          </div>
-        )}
-
         {modeTab === 'replay' && replayData && (
           <div className="hud-group">
             <button
@@ -799,14 +644,21 @@ export const App: React.FC = () => {
             <span className="badge badge-info">{replayData.salt_status}</span>
           </div>
         )}
-      </div>
+      </div>}
 
       {/* Main Two-Column Split */}
-      <main className={`workspace ${modeTab !== 'play' ? 'wide-right' : ''}`}>
+      <main className={`workspace ${modeTab !== 'play' ? 'wide-right' : ''} ${modeTab === 'watch' && !harborPayload ? 'awaiting-run' : ''}`}>
         {/* Left/Center: Cluster Topology + Telemetry/Traces Inspector */}
         <section className="center-col">
           <div className="graph-pane">
-            <ClusterGraph
+            {modeTab === 'watch' && !harborPayload ? (
+              <div className="watch-welcome">
+                <span className="eyebrow">Oncall incident gym</span>
+                <h1>Watch a Harbor evaluation.</h1>
+                <p>OpenCode investigates the incident inside Docker. Follow the live trial here, then reopen its transcript from Runs.</p>
+                <div className="welcome-steps"><span>01 · Choose a prepared export and model</span><span>02 · Launch Harbor with OpenCode</span><span>03 · Watch the trial · results save automatically</span></div>
+              </div>
+            ) : <ClusterGraph
               godState={activeView.god}
               fogState={activeView.fog}
               showGodView={activeView.showGod}
@@ -818,7 +670,7 @@ export const App: React.FC = () => {
               activeStepService={activeStepService}
               canQuickRun={modeTab === 'play' && playSession?.status !== 'closed'}
               onQuickTool={(nm, args) => void executePlayTool(nm, args)}
-            />
+            />}
           </div>
 
           <div className="inspector-pane">
@@ -890,253 +742,35 @@ export const App: React.FC = () => {
           )}
 
           {modeTab === 'watch' && (
-            <>
-              <div className="subtabs">
-                <button
-                  className={`subtab ${watchSource === 'runner' ? 'active' : ''}`}
-                  onClick={() => setWatchSource('runner')}
-                >
-                  <Bot size={13} /> Policy / LLM
-                </button>
-                <button
-                  className={`subtab ${watchSource === 'harbor' ? 'active' : ''}`}
-                  onClick={() => setWatchSource('harbor')}
-                >
-                  <Box size={13} /> Harbor Containers ({harborStatus.containers.length})
-                </button>
-                <button
-                  className={`subtab ${watchSource === 'mcp' ? 'active' : ''}`}
-                  onClick={() => setWatchSource('mcp')}
-                >
-                  <Plug size={13} /> External `/mcp`
-                </button>
-              </div>
-
-              <div className="scroll-body" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {watchSource === 'runner' && (
-                  <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <button
-                        className={`btn ${watchRunnerKind === 'policy' ? 'btn-primary' : ''}`}
-                        style={{ flex: 1 }}
-                        onClick={() => setWatchRunnerKind('policy')}
-                      >
-                        Built-in Policy / Bot
-                      </button>
-                      <button
-                        className={`btn ${watchRunnerKind === 'llm' ? 'btn-primary' : ''}`}
-                        style={{ flex: 1 }}
-                        onClick={() => setWatchRunnerKind('llm')}
-                      >
-                        OpenAI-Compatible LLM
-                      </button>
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-                      <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11 }}>
-                        Seed
-                        <input
-                          type="number"
-                          min={0}
-                          className="input mono"
-                          value={watchSeed}
-                          onChange={(e) => setWatchSeed(Number(e.target.value))}
-                        />
-                      </label>
-                      <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11 }}>
-                        Cluster Size
-                        <select
-                          className="select"
-                          value={watchDifficulty}
-                          onChange={(e) => setWatchDifficulty(Number(e.target.value))}
-                        >
-                          <option value={0}>23 Services (Standard)</option>
-                          <option value={1}>8 Services (Thin Slice)</option>
-                        </select>
-                      </label>
-                    </div>
-
-                    {watchRunnerKind === 'policy' ? (
-                      <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11 }}>
-                        Policy
-                        <select
-                          className="select mono"
-                          value={watchPolicy}
-                          onChange={(e) => setWatchPolicy(e.target.value)}
-                        >
-                          {oncallPolicies.map((p) => (
-                            <option key={p} value={p}>
-                              {p}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    ) : (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                        <input
-                          className="input mono"
-                          value={watchModel}
-                          onChange={(e) => setWatchModel(e.target.value)}
-                          placeholder="Model ID (e.g. gemini-3.8-flash)"
-                        />
-                        <input
-                          className="input mono"
-                          value={watchBaseUrl}
-                          onChange={(e) => setWatchBaseUrl(e.target.value)}
-                          placeholder="Base URL"
-                        />
-                        <input
-                          className="input mono"
-                          value={watchApiKeyEnv}
-                          onChange={(e) => setWatchApiKeyEnv(e.target.value)}
-                          placeholder="Server env var holding API key"
-                        />
-                      </div>
-                    )}
-
-                    <button
-                      className="btn btn-primary"
-                      onClick={() => void launchWatchSession(watchRunnerKind)}
-                    >
-                      <Play size={13} /> Launch &amp; Watch Live
-                    </button>
-                  </div>
-                )}
-
-                {watchSource === 'harbor' && (
-                  <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    <div style={{ fontWeight: 600, fontSize: 12 }}>
-                      Live Harbor Trial Container Selector
-                    </div>
-                    <div style={{ fontSize: 11.5, color: 'var(--text-2)', lineHeight: 1.45 }}>
-                      Discovers active <code>mcp-server</code> sidecars (<code>crucible-sidecar:*</code>)
-                      via <code>docker ps</code>, grouped by Compose trial project, and tails{' '}
-                      <code>/tmp/runs/episodes/sidecar-*.jsonl(.tmp)</code> + reconstructs the salted
-                      world on the host without exposing anything inside the container.
-                    </div>
-                    {!harborStatus.docker_available ? (
-                      <div className="badge badge-warn" style={{ padding: 6 }}>
-                        Docker unavailable: {harborStatus.error}
-                      </div>
-                    ) : harborStatus.containers.length === 0 ? (
-                      <div style={{ color: 'var(--text-2)', fontSize: 11.5, padding: '6px 0' }}>
-                        No running <code>crucible-sidecar</code> containers detected right now. Start{' '}
-                        <code>harbor run -p runs/oncall-export ...</code> and active trials will
-                        appear here automatically.
-                      </div>
-                    ) : (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                        {harborStatus.containers.map((c) => (
-                          <div
-                            key={c.container_id}
-                            onClick={() => setSelectedContainerId(c.container_id)}
-                            style={{
-                              padding: 8,
-                              borderRadius: 6,
-                              background: 'var(--bg-1)',
-                              border: `1px solid ${
-                                selectedContainerId === c.container_id
-                                  ? 'var(--cyan)'
-                                  : 'var(--border)'
-                              }`,
-                              cursor: 'pointer',
-                            }}
-                          >
-                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                              <span className="mono" style={{ fontWeight: 600, fontSize: 11.5 }}>
-                                {c.compose_project}
-                              </span>
-                              <span className="badge badge-ok">
-                                Seed {c.seed} · {c.steps} steps
-                              </span>
-                            </div>
-                            <div
-                              className="mono"
-                              style={{ fontSize: 10.5, color: 'var(--text-2)', marginTop: 3 }}
-                            >
-                              sidecar: {c.container_id} ({c.health})
-                              {c.agent_container ? ` · agent: ${c.agent_container.id}` : ''}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {watchSource === 'mcp' && (
-                  <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    <div style={{ fontWeight: 600, fontSize: 12 }}>
-                      Attach External MCP Client (Claude Code / OpenCode / Cursor)
-                    </div>
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <input
-                        type="number"
-                        min={0}
-                        className="input mono"
-                        style={{ width: 80 }}
-                        value={watchSeed}
-                        onChange={(e) => setWatchSeed(Number(e.target.value))}
-                      />
-                      <button
-                        className="btn btn-primary"
-                        style={{ flex: 1 }}
-                        onClick={() => void launchWatchSession('mcp')}
-                      >
-                        <Plug size={13} /> Create Live `/mcp` Session
-                      </button>
-                    </div>
-                    {watchSession && watchSession.mode === 'mcp' && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                        <div className="mono" style={{ fontSize: 11, color: 'var(--cyan)' }}>
-                          {window.location.origin}
-                          {watchSession.mcp_path}
-                        </div>
-                        <div style={{ display: 'flex', gap: 6 }}>
-                          <button
-                            className="btn"
-                            onClick={() =>
-                              void navigator.clipboard.writeText(
-                                `${window.location.origin}${watchSession.mcp_path}`,
-                              )
-                            }
-                          >
-                            <Copy size={12} /> Copy MCP URL
-                          </button>
-                          <button
-                            className="btn"
-                            onClick={() =>
-                              void navigator.clipboard.writeText(
-                                `uv run --directory engine crucible play --task oncall@1 --policy reference --mcp ${window.location.origin}${watchSession.mcp_path}`,
-                              )
-                            }
-                          >
-                            <Copy size={12} /> Copy `crucible play` Cmd
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                <div style={{ fontWeight: 600, fontSize: 12, marginTop: 4 }}>
-                  Live Agent Action Stream ({activeView.steps.length} calls)
-                </div>
-                <ActionTimeline
-                  steps={activeView.steps}
-                  selectedStep={null}
-                  onFocusService={setSelectedService}
-                  agentLogs={activeView.agentLogs}
-                />
-              </div>
-            </>
+            <div className="scroll-body watch-sidebar">
+              <HarborWatchPanel
+                containers={harborStatus.containers}
+                dockerAvailable={harborStatus.docker_available}
+                dockerError={harborStatus.error}
+                selectedContainerId={selectedContainerId}
+                onSelectContainer={id => { setHarborPayload(null); setSelectedContainerId(id); setInspectMinute(null); }}
+                onOpenRuns={async jobPath => {
+                  const runs = await api.listRuns();
+                  setSavedRuns(runs);
+                  const trial = runs.find(r => r.path.startsWith(jobPath + '/'));
+                  setSelectedRunPath(trial?.path ?? null);
+                  setRunFilter(jobPath.split('/').pop() ?? '');
+                  setScrubStep(null);
+                  setModeTab('replay');
+                }}
+              />
+              {harborPayload && <>
+                <div className="eyebrow">Activity · {activeView.steps.length} calls</div>
+                <ActionTimeline steps={activeView.steps} selectedStep={null} onFocusService={setSelectedService} agentLogs={activeView.agentLogs} />
+              </>}
+            </div>
           )}
 
           {modeTab === 'replay' && (
             <>
               <div className="subtabs" style={{ justifyContent: 'space-between' }}>
                 <span className="subtab active">
-                  Saved &amp; Live `.tmp` Runs ({savedRuns.length})
+                  Harbor trials ({savedRuns.length})
                 </span>
                 <button
                   className="btn"
@@ -1213,7 +847,7 @@ export const App: React.FC = () => {
                                       : 'badge-err'
                               }`}
                             >
-                              {r.live ? 'LIVE .tmp' : (r.score ?? 0).toFixed(3)}
+                              {r.live ? 'Live' : (r.score ?? 0).toFixed(3)}
                             </span>
                           </div>
                           <div
@@ -1227,7 +861,7 @@ export const App: React.FC = () => {
                     })}
                   {savedRuns.length === 0 && (
                     <div style={{ color: 'var(--text-2)', textAlign: 'center', padding: 14 }}>
-                      No transcripts in <code>runs/</code> or <code>jobs/</code> yet.
+                      No Harbor transcripts yet. Completed trials will appear here automatically.
                     </div>
                   )}
                 </div>

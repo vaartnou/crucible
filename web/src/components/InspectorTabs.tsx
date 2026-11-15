@@ -138,28 +138,28 @@ export const InspectorTabs: React.FC<InspectorTabsProps> = ({
           onClick={() => setTab('traces')}
         >
           <Workflow size={13} />
-          Call-Path Waterfalls ({traces.filter((t) => t.has_error).length}/{traces.length})
+          Call paths ({traces.filter((t) => t.has_error).length}/{traces.length})
         </button>
         <button
           className={`subtab ${tab === 'timeline' ? 'active' : ''}`}
           onClick={() => setTab('timeline')}
         >
           <Activity size={13} />
-          Impact &amp; Heatmap
+          Impact
         </button>
         <button
           className={`subtab ${tab === 'pods' ? 'active' : ''}`}
           onClick={() => setTab('pods')}
         >
           <Cpu size={13} />
-          {selectedService ? `Service: ${selectedService}` : 'Pods & Services'}
+          {selectedService ? `Service: ${selectedService}` : 'Services'}
         </button>
         <button
           className={`subtab ${tab === 'changes' ? 'active' : ''}`}
           onClick={() => setTab('changes')}
         >
           <GitCommit size={13} />
-          Changes ({changesList.length}) &amp; Alerts ({alertsList.length})
+          Changes &amp; alerts
         </button>
 
         {usingGod && godState && (
@@ -503,7 +503,7 @@ const TimelinePanel: React.FC<{
           {seriesKeys.length === 0 ? (
             <div style={{ color: 'var(--text-2)' }}>
               No <code>query_metrics(..., series=true)</code> calls recorded yet, and Simulator God
-              View is currently hidden. Toggle <b>God View</b> above to inspect full counterfactual
+              View is currently hidden. Toggle <b>Full cluster</b> above to inspect full counterfactual
               loss curves and the 23-service onset heatmap.
             </div>
           ) : (

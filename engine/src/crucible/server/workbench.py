@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Any, Literal
 from uuid import uuid4
 
-import httpx
 import mcp.types as mcp_types
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,7 +23,6 @@ from starlette.responses import Response
 from starlette.routing import Route
 from starlette.types import Receive, Scope, Send
 
-from crucible.agents.compatible import CompatiblePolicy
 from crucible.core.jobs import Job
 from crucible.core.registry import get_policy, get_task, list_policies, list_tasks
 from crucible.core.scoring import Score
@@ -33,6 +31,7 @@ from crucible.core.task import Task
 from crucible.core.tools import Observation, ToolCall, ToolKind, ToolResult, result_text
 from crucible.core.transcript import StepRecord, StopReason, TranscriptWriter, now
 from crucible.envs.oncall.world import FAULTS
+from crucible.server.harbor_jobs import HarborJobs, LaunchHarborRequest
 from crucible.server.inspector import build_fog_state, build_god_state
 from crucible.server.settings import Settings
 from crucible.server.sources import (
@@ -60,11 +59,8 @@ class CreateSessionRequest(BaseModel):
     task_id: str = "oncall@1"
     seed: int = Field(default=0, ge=0)
     difficulty: int = Field(default=0, ge=0, le=1)
-    mode: Literal["human", "policy", "llm", "mcp"] = "human"
+    mode: Literal["human", "policy", "mcp"] = "human"
     policy: str = "graph_walk"
-    model: str = "gemini-3.8-flash"
-    base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
-    api_key_env: str = "GOOGLE_GENERATIVE_AI_API_KEY"
     step_delay_ms: int = Field(default=450, ge=0, le=10000)
     auto_run: bool = True
     use_eval_salt: bool = False
@@ -193,7 +189,7 @@ class WorkbenchEntry:
         seed: int,
         difficulty: int,
         salt: str | None,
-        mode: Literal["human", "policy", "llm", "mcp"],
+        mode: Literal["human", "policy", "mcp"],
         actor_label: str,
         instruction: str,
         first_observation: Observation,
@@ -230,7 +226,7 @@ class WorkbenchEntry:
             return "closed"
         if self.session.closed:
             return "grading"
-        if self.mode in ("policy", "llm"):
+        if self.mode == "policy":
             return "paused" if self.paused else "running"
         return "waiting"
 
@@ -364,13 +360,6 @@ class WorkbenchManager:
             except KeyError as exc:
                 raise HTTPException(404, detail=str(exc.args[0])) from None
             actor_label = req.policy
-        elif req.mode == "llm":
-            if not os.environ.get(req.api_key_env):
-                raise HTTPException(
-                    400,
-                    detail=f"Environment variable {req.api_key_env} is not set on server",
-                )
-            actor_label = req.model
         elif req.mode == "human":
             actor_label = "human-operator"
         else:
@@ -412,10 +401,6 @@ class WorkbenchManager:
             await self.ensure_mcp_app(entry)
         elif req.mode == "policy":
             entry.runner_task = asyncio.create_task(self._run_policy_loop(entry, req.policy))
-        elif req.mode == "llm":
-            entry.runner_task = asyncio.create_task(
-                self._run_llm_loop(entry, req.model, req.base_url, req.api_key_env)
-            )
         return entry
 
     async def _wait_gate(self, entry: WorkbenchEntry) -> None:
@@ -450,45 +435,6 @@ class WorkbenchManager:
         except Exception as exc:
             logger.exception("Workbench policy loop failed")
             await entry.finalize(f"{type(exc).__name__}: {exc}")
-
-    async def _run_llm_loop(
-        self, entry: WorkbenchEntry, model: str, base_url: str, api_key_env: str
-    ) -> None:
-        task = entry.session.task
-        api_key = os.environ.get(api_key_env, "")
-        try:
-            async with httpx.AsyncClient(
-                base_url=base_url.rstrip("/") + "/",
-                headers={"Authorization": f"Bearer {api_key}"},
-                timeout=120,
-            ) as client:
-                policy = CompatiblePolicy(client, model)
-                await policy.reset(task.spec, task.tools(), entry.instruction)
-                while not task.done() and entry.session.steps_used < entry.session.max_steps:
-                    await self._wait_gate(entry)
-                    if entry.session.closed:
-                        return
-                    prev_msg_len = len(policy.messages)
-                    call = await policy.act(entry.last_observation)
-                    thought: str | None = None
-                    if len(policy.messages) > prev_msg_len:
-                        last_assistant = policy.messages[-1]
-                        raw_content = last_assistant.get("content")
-                        if isinstance(raw_content, str) and raw_content.strip():
-                            thought = raw_content.strip()
-                    if call is None:
-                        break
-                    await entry.execute_call(call, thought=thought)
-                    if entry.step_delay_ms > 0 and not task.done():
-                        await asyncio.sleep(entry.step_delay_ms / 1000.0)
-                await entry.finalize()
-        except asyncio.CancelledError:
-            with contextlib.suppress(Exception):
-                await entry.finalize("CancelledError")
-            raise
-        except Exception as exc:
-            logger.exception("Workbench LLM loop failed")
-            await entry.finalize(type(exc).__name__)
 
     async def aclose(self) -> None:
         for entry in list(self.entries.values()):
@@ -589,7 +535,8 @@ def add_workbench_routes(app: FastAPI, settings: Settings) -> WorkbenchManager:
     )
 
     manager = WorkbenchManager(settings)
-    extra_dirs = [settings.runs_dir]
+    jobs = HarborJobs(settings)
+    extra_dirs = [settings.runs_dir, settings.harbor_jobs_dir, settings.harbor_exports_dir]
 
     class SessionMcpASGI:
         async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
@@ -723,7 +670,7 @@ def add_workbench_routes(app: FastAPI, settings: Settings) -> WorkbenchManager:
 
     @app.get("/ui/runs")
     async def ui_list_runs() -> list[dict[str, Any]]:  # pyright: ignore[reportUnusedFunction]
-        return await list_saved_runs(extra_dirs)
+        return await list_saved_runs([settings.harbor_jobs_dir], harbor_only=True)
 
     @app.get("/ui/runs/replay")
     async def ui_replay_run(  # pyright: ignore[reportUnusedFunction]
@@ -748,6 +695,14 @@ def add_workbench_routes(app: FastAPI, settings: Settings) -> WorkbenchManager:
             raise HTTPException(404, detail=str(exc)) from None
         except ValueError as exc:
             raise HTTPException(422, detail=str(exc)) from None
+
+    @app.get("/ui/harbor/jobs")
+    async def ui_harbor_jobs() -> dict[str, Any]:  # pyright: ignore[reportUnusedFunction]
+        return await asyncio.to_thread(jobs.describe)
+
+    @app.post("/ui/harbor/jobs")
+    async def ui_launch_harbor(body: LaunchHarborRequest) -> dict[str, Any]:  # pyright: ignore[reportUnusedFunction]
+        return await jobs.launch(body)
 
     @app.get("/ui/harbor/containers")
     async def ui_harbor_containers() -> dict[str, Any]:  # pyright: ignore[reportUnusedFunction]

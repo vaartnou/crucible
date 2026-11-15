@@ -16,6 +16,7 @@ from crucible.envs.oncall.task import OncallTask
 from crucible.feedback.version import environment_hash, simulator_hash
 from crucible.server.app import create_app
 from crucible.server.settings import Settings
+from crucible.server.sources import list_saved_runs
 
 
 @pytest.fixture
@@ -175,7 +176,7 @@ async def test_saved_and_live_tmp_transcript_replay(tmp_path: Path) -> None:
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as c:
-        runs = (await c.get("/ui/runs")).json()
+        runs = await list_saved_runs([tmp_path])
         live_entries = [r for r in runs if r["live"] is True and r["policy"] == "live-test-model"]
         done_entries = [r for r in runs if r["live"] is False and r["policy"] == "loudest_alert"]
         assert len(live_entries) == 1

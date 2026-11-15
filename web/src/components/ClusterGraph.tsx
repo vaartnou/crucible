@@ -298,8 +298,8 @@ export const ClusterGraph: React.FC<ClusterGraphProps> = ({
             style={{ padding: '3px 8px', fontSize: 11 }}
           >
             {usingGod
-              ? `SIMULATOR GOD VIEW @ m=${godState?.selected_minute ?? 5}`
-              : `AGENT FOG-OF-WAR (${nodes.length} services discovered)`}
+              ? `Cluster · minute ${godState?.selected_minute ?? 5}`
+              : `Discovered services · ${nodes.length}`}
           </span>
           {godState?.stampede_until != null && godState.selected_minute < godState.stampede_until && (
             <span className="badge badge-err">
@@ -317,10 +317,10 @@ export const ClusterGraph: React.FC<ClusterGraphProps> = ({
           <button
             className={`btn ${showGodView ? 'btn-primary' : ''}`}
             onClick={onToggleGodView}
-            title="Toggle between fair Agent Fog-of-War view and live Simulator God View"
+            title="Switch between the agent’s observations and the full simulated cluster"
           >
             {showGodView ? <Eye size={13} /> : <EyeOff size={13} />}
-            {showGodView ? 'God View: ON' : 'Fog-of-War'}
+            {showGodView ? 'Full cluster' : 'Agent view'}
           </button>
           {showGodView && (
             <button
@@ -368,12 +368,12 @@ export const ClusterGraph: React.FC<ClusterGraphProps> = ({
         >
           <Radar size={34} color="var(--cyan)" />
           <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--text-0)' }}>
-            Cluster Unmapped (Agent Fog-of-War Active)
+            Discover your cluster
           </div>
           <div style={{ maxWidth: 460, color: 'var(--text-2)', lineHeight: 1.5 }}>
             Just like the evaluated agent, you start at <b>minute 5</b> knowing nothing about the
             cluster topology or active alerts until you spend tool calls—or toggle{' '}
-            <b>God View</b> above to inspect the live fluid network.
+            <b>Full cluster</b> above to inspect the live fluid network.
           </div>
           {canQuickRun && onQuickTool && (
             <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap', justifyContent: 'center' }}>

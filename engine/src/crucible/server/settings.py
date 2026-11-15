@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     port: int = 8000
     log_level: str = "info"
     runs_dir: Path = Path("runs/server")
+    harbor_jobs_dir: Path = Path("runs/harbor-jobs")
+    harbor_exports_dir: Path = Path("runs")
     session_ttl_seconds: int = 3600
     grade_token: str = ""
     solution_token: str = ""

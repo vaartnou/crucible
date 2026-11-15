@@ -14,3 +14,7 @@ uv run --directory engine pyright
 See [using environments](docs/using-environments.md), [concepts](docs/concepts.md), and [adding an environment](docs/adding-an-environment.md). Production wheels ship only oncall; the guess task is a test fixture.
 
 Implementation scope, measured results and the tight feedback commands: [oncall status](docs/oncall-status.md).
+
+The web UI uses Harbor + OpenCode for model evaluations. Watch launches Docker trials;
+Runs reads their saved transcripts from a configured Harbor jobs directory. See
+[UI setup](docs/using-environments.md#ui-and-saved-evaluations).

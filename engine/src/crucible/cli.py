@@ -334,14 +334,26 @@ def ui_command(
     runs_dir: Annotated[Path, typer.Option(help="Directory for workbench episodes.")] = Path(
         "runs/server"
     ),
+    jobs_dir: Annotated[Path, typer.Option(help="Harbor job output directory.")] = Path(
+        "runs/harbor-jobs"
+    ),
+    exports_dir: Annotated[
+        Path, typer.Option(help="Directory containing prepared Harbor exports.")
+    ] = Path("runs"),
 ) -> None:
-    """Serve the Oncall Workbench API and built web UI."""
+    """Serve manual play, Harbor evaluations, and saved Harbor runs."""
     import uvicorn
 
     from crucible.server.app import create_app
     from crucible.server.settings import Settings
 
-    settings = Settings(mode="api", port=port, runs_dir=runs_dir)
+    settings = Settings(
+        mode="api",
+        port=port,
+        runs_dir=runs_dir,
+        harbor_jobs_dir=jobs_dir,
+        harbor_exports_dir=exports_dir,
+    )
     typer.echo(f"Crucible Oncall Workbench -> http://{host}:{port}")
     uvicorn.run(create_app(settings), host=host, port=port, log_level=settings.log_level)
 
@@ -380,46 +392,6 @@ def regrade_command(
         raise typer.Exit(1)
 
 
-@app.command("agent")
-def agent_command(
-    task: Annotated[str, typer.Option("--task")],
-    model: Annotated[str, typer.Option()],
-    out: Annotated[Path, typer.Option(help="New output directory.")],
-    base_url: Annotated[str, typer.Option(help="OpenAI-compatible API base URL.")],
-    seeds: Annotated[str, typer.Option()] = "0-9",
-    concurrency: Annotated[int, typer.Option(min=1, max=32)] = 10,
-    api_key_env: Annotated[str, typer.Option()] = "OPENAI_API_KEY",
-    salt_env: Annotated[str, typer.Option()] = "CRUCIBLE_EVAL_SALT",
-) -> None:
-    """Run a salted model batch directly against the in-process tools."""
-    import os
-
-    from crucible.agents.batch import agent_batch
-
-    key, salt = os.environ.get(api_key_env), os.environ.get(salt_env)
-    if not key or not salt:
-        _fail(f"Set {api_key_env} and {salt_env}; secrets are never saved in artifacts")
-    try:
-        get_task(task)
-        rows = asyncio.run(
-            agent_batch(
-                task,
-                model,
-                parse_seeds(seeds),
-                out,
-                base_url=base_url,
-                api_key=key,
-                salt=salt,
-                concurrency=concurrency,
-            )
-        )
-    except (ValueError, KeyError, OSError) as exc:
-        _fail(str(exc))
-    typer.echo(json.dumps(rows, indent=2))
-    if any(row["error"] is not None for row in rows):
-        raise typer.Exit(1)
-
-
 @app.command("gates")
 def gates_command(
     out: Annotated[Path, typer.Option(help="New measurement directory.")],
@@ -446,9 +418,9 @@ def gates_command(
 @app.command("compare")
 def compare_command(
     bots: Annotated[Path, typer.Option(help="Salted bot gate output directory.")],
-    agent: Annotated[Path, typer.Option(help="Ten-seed direct model output directory.")],
+    agent: Annotated[Path, typer.Option(help="Historical model screening output directory.")],
 ) -> None:
-    """Check the paired model gap; provider failures never count as model losses."""
+    """Compare archived screening results; new model evaluations run through Harbor."""
     from crucible.feedback.compare import compare
 
     try:

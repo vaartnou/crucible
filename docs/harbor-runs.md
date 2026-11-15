@@ -18,7 +18,7 @@ Harbor 0.26 reads `reward.json` as named numeric rewards. Crucible writes `rewar
 
 The oracle invokes `/autoplay` with a solution-only token; it runs the reference in process and records public tool actions. This removes per-trial network installation of the engine. Live MCP tests separately exercise the model-facing protocol.
 
-Before a paid model batch, pass the bot gates, then inspect a direct model batch. Only report the Harbor model results after the same salted ten worlds show the planned gap. Use [the failure rubric](oncall-failure-rubric.md) to examine both losses and model successes.
+Run deterministic checks and bot baselines before a model batch. All new model evaluations use Harbor with OpenCode; the former direct-model screening runner has been removed. Use [the failure rubric](oncall-failure-rubric.md) to examine both losses and model successes.
 
 Docker Desktop reported 8,317,202,432 bytes (about 7.75 GiB) on 2026-11-15. Use concurrency 2–4 at that allocation; concurrency 8 awaits an explicit host-memory change and a measured resource check.
 

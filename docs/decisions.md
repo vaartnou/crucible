@@ -8,3 +8,7 @@
 - Python 3.14, uv, ruff, strict pyright and pytest are the engine toolchain. Environments register through entry points; policies receive observations only. Invalid tool calls count against the episode call budget.
 
 - 2026-11-15 — Oncall `solved` means sustained verified recovery with all diagnosis fields correct. Impact reward remains separate: a late successful repair can score below 0.75. Difficulty gates continue to compare raw mean rewards (graph_walk >= 0.75, reference >= 0.85); this semantic change does not lower those gates.
+
+- 2026-11-15 — Use Harbor + OpenCode as the only model evaluation path. Remove the custom
+  API tool loop, CLI model screening command, and in-process model controls. Keep deterministic
+  baselines, manual play, grading, and replay. The UI reads saved Harbor job outputs from disk.

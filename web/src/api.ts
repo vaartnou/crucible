@@ -26,6 +26,9 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  getHarborJobs: () => request<import('./types').HarborJobsState>('/ui/harbor/jobs'),
+  launchHarbor: (payload: { export: string; model: string; concurrency: number }) =>
+    request<{ id: string; path: string; status: string }>('/ui/harbor/jobs', { method: 'POST', body: JSON.stringify(payload) }),
   getMeta: () => request<WorkbenchMeta>('/ui/meta'),
 
   createSession: (
@@ -33,11 +36,8 @@ export const api = {
       task_id?: string;
       seed: number;
       difficulty: number;
-      mode: 'human' | 'policy' | 'llm' | 'mcp';
+      mode: 'human' | 'policy' | 'mcp';
       policy?: string;
-      model?: string;
-      base_url?: string;
-      api_key_env?: string;
       step_delay_ms?: number;
       auto_run?: boolean;
       use_eval_salt?: boolean;

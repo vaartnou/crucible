@@ -2,7 +2,7 @@
 
 Status: experimental, 2026-11-15. **The hard-eval claim has not passed.** The [causal-model iteration](oncall-iteration-2.md) is implemented and measured: paired Flash 0.8583 versus graph walk 0.8817 (gap 0.0234; 1/10 seeds at the target gap).
 
-The implementation replaces the old environments with `oncall@1`, preserves guess as a test fixture, and adds Harbor export, direct model screening, replay, and paired gate commands. The original proposal is preserved in [oncall-proposal.md](plans/oncall-proposal.md).
+The implementation replaces the old environments with `oncall@1`, preserves guess as a test fixture, and adds Harbor export, replay, and bot gate commands. Direct model screening was used for the historical measurements and has since been removed. The original proposal is preserved in [oncall-proposal.md](plans/oncall-proposal.md).
 
 ## What exists
 
@@ -11,9 +11,15 @@ The implementation replaces the old environments with `oncall@1`, preserves gues
 - Minute snapshots shared by metrics, logs, alerts and pod/event views; strict command grammar, call/horizon budgets, delayed actions, structured diagnosis, post-resolution recovery probes.
 - Public-tool graph walk/reference, naive loudest-alert baseline and exploit policies.
 - Harbor 1.4 task schema, named reward components, one shared image build per export, token-gated in-process oracle, and transcript export.
-- `crucible gates`, `agent`, `compare`, and `regrade`. Batch comparisons require identical salt and simulator source hashes. Provider errors cannot count as model reasoning failures.
+- `crucible gates`, historical `compare`, and `regrade`; Harbor handles model evaluations. Batch comparisons require identical salt and simulator source hashes. Provider errors cannot count as model reasoning failures.
 
 The revised simulator uses a **deterministic fluid network** with explicit edges, finite connection pools, latency-derived timeouts, retry load feedback, and persistent worker queues. Changes update effective settings and version-keyed deployment behavior. Public tools expose current and historical edge settings, offered/admitted rates, pool rejection, and numerical convergence diagnostics. Service names and root depth vary, but graph structure remains regular. Reference extends public graph walk with memory-slope verification. See [the causal iteration](oncall-iteration-2.md) for evidence and fresh measurements. There are no traces, two-fault generated episodes, full fault catalogue, generation rejection filter, extra-capacity actions, or replay viewer. Do not describe these milestones as complete.
+
+## Current workflow
+
+All new model evaluations run in Harbor with OpenCode and Docker. The direct-model runner and
+`crucible agent` command have been removed. Historical screening results below remain evidence
+from their original harness, not Harbor results. See [UI setup and saved runs](using-environments.md#ui-and-saved-evaluations).
 
 ## Fast loop
 
@@ -21,15 +27,9 @@ Run from the repository root. Set a private `CRUCIBLE_EVAL_SALT` once for a pair
 
 ```sh
 uv run --directory engine crucible gates --seeds 0-49 --out ../runs/oncall-bots
-uv run --directory engine crucible agent --task oncall@1 \
-  --model gemini-3.8-flash \
-  --base-url https://generativelanguage.googleapis.com/v1beta/openai/ \
-  --api-key-env GOOGLE_GENERATIVE_AI_API_KEY \
-  --seeds 0-9 --out ../runs/oncall-flash
-uv run --directory engine crucible compare \
-  --bots ../runs/oncall-bots --agent ../runs/oncall-flash
-uv run --directory engine crucible regrade ../runs/oncall-flash \
-  --salt-env CRUCIBLE_EVAL_SALT --out ../runs/regrade.json
+uv run --directory engine crucible export harbor --task oncall@1 --seeds 0-9 --out ../runs/oncall-export
+sh runs/oncall-export/build-sidecar.sh
+harbor run -p runs/oncall-export -a opencode -m google/gemini-3.8-flash --ak version=1.19.5 -n 2 -o runs/harbor-jobs
 uv run --directory engine crucible regrade ../runs/harbor-jobs/JOB \
   --export ../runs/ORIGINAL-EXPORT --out ../runs/harbor-regrade.json
 ```
@@ -38,7 +38,7 @@ uv run --directory engine crucible regrade ../runs/harbor-jobs/JOB \
 
 `regrade` runs recorded actions on current code, reports the first changed observation, and returns exit code 1 on divergence or unreadable transcripts. A changed simulator must be rerun before scores are used as a matched comparison. It never overwrites old trial transcripts.
 
-Only run Harbor model batches after the direct screening gate passes. Harbor oracle/nop checks are wiring tests, not difficulty measurements. Docker has about 7.75 GiB allocated, so measured smoke runs use concurrency 2. The model API/mcp-server allowlist experiment failed on internal DNS; default networking remains and the integrity gap is documented in [reward-integrity.md](reward-integrity.md).
+Run bot checks before Harbor model batches. Harbor oracle/nop checks are wiring tests, not difficulty measurements. Docker has about 7.75 GiB allocated, so measured smoke runs use concurrency 2. The model API/mcp-server allowlist experiment failed on internal DNS; default networking remains and the integrity gap is documented in [reward-integrity.md](reward-integrity.md).
 
 ## First-iteration findings (superseded simulator)
 
