@@ -18,7 +18,7 @@ If the task needs a real shell, real files or a model as judge, use a plain Harb
 uv run --directory engine crucible new-env triage
 ```
 
-This copies `guess@1` into a working environment:
+This copies the test fixture `guess@1` into a working environment:
 
 ```text
 engine/src/crucible/envs/triage/
@@ -73,14 +73,14 @@ The generic checks and the golden scores hold every environment to these rules:
 
 ### Never leak hidden state
 
-- Build every tool result from public values only. In `incident@1`, results come from view models in `state.py`, never from `World`.
+- Build every tool result from public values only. In `oncall@1`, results come from view models in `state.py`, never from `World`.
 - Error messages must not name hidden values. `rollback` of an unknown id lists only the visible deploy ids.
 - Policies import only `crucible.core`, `crucible.policies` and their own `policies/` package. `tests/policies/test_no_hidden_imports.py` checks this with `ast`.
 - Test scripts that need the truth (calibration solvers) live in `tests/`, which the wheel leaves out.
 
 ## Steps
 
-Each step uses `guess@1` as the worked example. Look at [envs/incident](../engine/src/crucible/envs/incident/) for a full one.
+Each step uses `guess@1` as the worked example. Look at [envs/oncall](../engine/src/crucible/envs/oncall/) for a full one.
 
 1. **World (with salt).** Draw everything random in `reset` from `RngStreams(seed, salt).exogenous`. Never use `hash()` or the global `random`.
    *guess:* `self._hidden = _Hidden(target=RngStreams(seed, salt).exogenous.randint(1, 100))`.
@@ -101,7 +101,7 @@ Each step uses `guess@1` as the worked example. Look at [envs/incident](../engin
    *guess:* binary search; at most 7 guesses.
 
 7. **Baselines and exploits.** Write policies that try cheap tricks: guess early, try every action, stop at once. Register them and list them in `checks = TaskChecks(exploit_policies=(...))`. Each must score below the reference on every seed.
-   *incident:* `stop_early` and `shotgun`.
+   *oncall:* `shotgun`, `restart_all` and `rollback_all`.
 
 8. **Register.** `new-env` already wrote the entry point and the package `__init__.py` imports. A plugin package outside this repo declares its own:
 
@@ -130,7 +130,7 @@ Each step uses `guess@1` as the worked example. Look at [envs/incident](../engin
 
 11. **Harbor runs.** Run `oracle` and `nop` first. The oracle must match your reference closely, and `nop` must score 0. Then run a model agent. See [using-environments.md](using-environments.md#run-in-harbor). Add the scores to [harbor-runs.md](harbor-runs.md).
 
-12. **Environment card.** Fill in `README.md` in the environment folder: the job, tools, why it is hard, scoring, results, exploits, limits, seeds and versions. Use [envs/incident/README.md](../engine/src/crucible/envs/incident/README.md) as the model.
+12. **Environment card.** Fill in `README.md` in the environment folder: the job, tools, why it is hard, scoring, results, exploits, limits, seeds and versions. Use [envs/oncall/README.md](../engine/src/crucible/envs/oncall/README.md) as the model.
 
 ## The generic checks
 

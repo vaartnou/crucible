@@ -14,8 +14,9 @@ from crucible.core.tools import ToolCall, ToolResult, ToolSpec, tool_map, valida
 from crucible.envs.supplygym.cala_task import SupplyGymCalaTask
 from crucible.envs.supplygym.cala_world import cala_world_identity
 from crucible.envs.supplygym.play import Play
+from crucible.envs.supplygym.sim import TERMINAL_VALUE
 from crucible.envs.supplygym.task import ControlsArgs, SupplyGymFreshTask, SupplyGymTask
-from crucible.envs.supplygym.world import PRICE_SELL
+from crucible.envs.supplygym.world import PRICE_SELL, STOCKOUT_PEN
 
 
 class OutcomeRubric(BaseModel):
@@ -40,6 +41,8 @@ RUBRIC, RUBRIC_HASH = load_scoring_config(
     Path(__file__).with_name("outcome_scoring.yaml"), OutcomeRubric
 )
 COST_KEYS = ("purchase", "holding", "stockout", "expedite", "switching")
+V3_SERVICE_CHARGE = 50.0
+V3_FLOOR_FRACTION = 0.95
 CALA_V3_MAX_STEPS = 200
 
 
@@ -215,12 +218,17 @@ class SupplyGymCalaOutcomes(OutcomeTask, SupplyGymCalaTask):
 class SupplyGymCalaUpperBound(SupplyGymCalaOutcomes):
     """Cala controls with a fixed, scenario-specific optimistic surplus denominator."""
 
-    spec = SupplyGymCalaTask.spec.model_copy(
-        update={"version": 3, "max_steps": CALA_V3_MAX_STEPS}
-    )
+    spec = SupplyGymCalaTask.spec.model_copy(update={"version": 3, "max_steps": CALA_V3_MAX_STEPS})
     scoring_hash = hashlib.sha256(
         json.dumps(
-            {"method": "cala-surplus-upper-bound-v1", "world": cala_world_identity()},
+            {
+                "method": "cala-terminal-service-anchored-v2",
+                "world": cala_world_identity(),
+                "terminal_value": TERMINAL_VALUE,
+                "lost_unit_charge": V3_SERVICE_CHARGE,
+                "continuity_unit_charge": STOCKOUT_PEN,
+                "default_floor_fraction": V3_FLOOR_FRACTION,
+            },
             sort_keys=True,
         ).encode()
     ).hexdigest()
@@ -237,30 +245,69 @@ class SupplyGymCalaUpperBound(SupplyGymCalaOutcomes):
         observation = await super().reset(seed, difficulty, salt=salt)
         assert self._play is not None
         self._upper_bound_cents = surplus_upper_bound(self._play)
+        self._opening_units = self._inventory_units(self._play)
+        # A fresh replay uses precisely the seeded/salted tape, never live actions.
+        baseline = Play(seed, self.regime, salt or "")
+        while not baseline.done:
+            baseline.apply({})
+        self._surplus_floor = V3_FLOOR_FRACTION * max(0.0, self._adjusted_surplus(baseline)[0])
         return observation
+
+    @staticmethod
+    def _inventory_units(play: Play) -> float:
+        env: Any = play.env
+        return float(env.onhand + sum(order["qty"] for order in env.orders))
+
+    def _adjusted_surplus(self, play: Play) -> tuple[float, float, float, float]:
+        accounting = grade_outcomes(play).breakdown
+        units = self._inventory_units(play)
+        terminal_credit = TERMINAL_VALUE * units
+        # Service failures have an additional $50/unit opportunity cost. Maintain
+        # the opening working inventory to avoid exporting shortages past day 365.
+        service_charge = V3_SERVICE_CHARGE * accounting["lost_units"]
+        continuity_charge = STOCKOUT_PEN * max(0.0, self._opening_units - units)
+        adjusted = (
+            accounting["operating_surplus"] + terminal_credit - service_charge - continuity_charge
+        )
+        return adjusted, terminal_credit, service_charge, continuity_charge
 
     async def grade(self) -> Score:
         if self._play is None:
             raise ValueError("Episode not started")
         accounting = grade_outcomes(self._play)
         bound = self._upper_bound_cents / 100
+        adjusted, terminal, service_charge, continuity_charge = self._adjusted_surplus(self._play)
+        floor = self._surplus_floor
         total = 0.0
-        if accounting.flags["completed"] and bound > 0:
-            total = max(0.0, min(1.0, accounting.breakdown["operating_surplus"] / bound))
+        if accounting.flags["completed"] and bound > floor:
+            total = max(0.0, min(1.0, (adjusted - floor) / (bound - floor)))
         return Score(
             total=total,
-            breakdown={**accounting.breakdown, "surplus_upper_bound": bound},
+            breakdown={
+                **accounting.breakdown,
+                "terminal_inventory_credit": terminal,
+                "terminal_surplus": accounting.breakdown["operating_surplus"] + terminal,
+                "service_charge": service_charge,
+                "continuity_charge": continuity_charge,
+                "adjusted_surplus": adjusted,
+                "surplus_floor": floor,
+                "surplus_upper_bound": bound,
+            },
             flags={"completed": accounting.flags["completed"]},
         )
 
     def _scoring_instruction(self) -> str:
         return (
-            "Complete all 365 days to earn credit; an unfinished year scores zero. "
-            "Your score is operating surplus divided by a positive theoretical upper bound "
-            "for this year, clipped to [0, 1]. The bound is calculated before your first "
-            "action from the scenario's hidden demand and disruptions, allowing optimistic "
-            "purchases and shipments. Operating surplus is sales revenue minus purchase, "
-            "holding, lost-sale penalties, expedite and switching costs incurred during "
-            "the year. Opening stock and freight are prepaid; terminal inventory receives "
-            "no credit. The verifier uses its own ledger."
+            "Complete all 365 days through 53 weekly decisions; an unfinished year scores zero. "
+            "Score = clip((adjusted surplus - floor) / (upper bound - floor), 0, 1). "
+            "Operating surplus is sales revenue minus purchase, holding, lost-sale penalties, "
+            "expedite and switching costs. Terminal on-hand inventory and actual shipped units "
+            "still in transit receive $10.00/unit replacement credit. Opening stock and freight "
+            "are prepaid. Adjusted surplus adds this terminal credit, subtracts an additional "
+            "$50 per lost demand unit, and reserves $10 per unit by which terminal on-hand plus "
+            "pipeline falls below the opening inventory position, to protect continuing service. "
+            "The floor is 95% of nonnegative adjusted surplus from default ss play. "
+            "The certified terminal-inclusive upper bound and default floor are fixed at reset "
+            "from the seeded scenario, independently of your actions. "
+            "The verifier uses its own ledger."
         )

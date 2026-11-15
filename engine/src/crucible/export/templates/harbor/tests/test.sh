@@ -4,7 +4,7 @@
 # The breakdown goes to grade.json: Harbor reads reward.json as a dict of numeric rewards.
 mkdir -p /logs/verifier
 python3 - <<'PY'
-import json, os, time, urllib.request
+import json, math, os, time, urllib.request
 
 out = "/logs/verifier"
 
@@ -27,12 +27,19 @@ for _ in range(10):
         time.sleep(1)
 
 if body is None:
-    write("reward.txt", "0")
+    write("reward.json", json.dumps(dict.fromkeys(("reward", "impact", "verified", "diagnosis", "penalty"), 0.0)))
     write("grade_error.txt", error or "unknown error")
     print("grade failed:", error)
 else:
     reward = min(1.0, max(0.0, float(body["reward"])))
-    write("reward.txt", f"{reward}")
+    breakdown, flags = body.get("breakdown", {}), body.get("flags", {})
+    def number(value):
+        value = float(value)
+        return value if math.isfinite(value) else 0.0
+    rewards = {"reward": number(reward)}
+    for key in ("impact", "verified", "diagnosis", "penalty"):
+        rewards[key] = number(breakdown.get(key, flags.get(key, 0.0)))
+    write("reward.json", json.dumps(rewards))
     summary = {k: body[k] for k in ("reward", "breakdown", "flags", "steps", "stop_reason")}
     write("grade.json", json.dumps(summary, indent=2))
     write("transcript.json", json.dumps(body["transcript"], indent=2))

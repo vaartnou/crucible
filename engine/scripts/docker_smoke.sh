@@ -43,7 +43,7 @@ echo "== api mode"
 PORT_API="$(free_port)"
 CONTAINERS+=("$(docker run -d -p "${PORT_API}:8000" "$IMAGE")")
 wait_healthy "$PORT_API"
-OUT="$(uv run crucible play --api "http://localhost:${PORT_API}" --task incident@1 --seed 0 --policy reference)"
+OUT="$(uv run crucible play --api "http://localhost:${PORT_API}" --task oncall@1 --seed 0 --policy reference)"
 echo "$OUT"
 python3 - "$OUT" <<'PY'
 import json, sys
@@ -54,7 +54,7 @@ PY
 echo "== sidecar mode"
 PORT_SIDE="$(free_port)"
 CONTAINERS+=("$(docker run -d -p "${PORT_SIDE}:8000" \
-  -e MODE=sidecar -e "GRADE_TOKEN=${TOKEN}" -e SIDECAR_TASK=incident@1 -e SIDECAR_SEED=0 "$IMAGE")")
+  -e MODE=sidecar -e "GRADE_TOKEN=${TOKEN}" -e SIDECAR_TASK=oncall@1 -e SIDECAR_SEED=0 "$IMAGE")")
 wait_healthy "$PORT_SIDE"
 NO_TOKEN="$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:${PORT_SIDE}/grade")"
 WITH_TOKEN="$(curl -s -o /dev/null -w '%{http_code}' -H "x-grade-token: ${TOKEN}" "http://localhost:${PORT_SIDE}/grade")"

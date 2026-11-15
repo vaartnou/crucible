@@ -11,11 +11,16 @@ from typing import Any
 from crucible.core.registry import register_policy
 from crucible.core.task import TaskSpec
 from crucible.core.tools import Observation, ToolCall, ToolSpec
-from crucible.envs.supplygym.policies.reference import CALA_REFERENCE, Decider, make_decider
+from crucible.envs.supplygym.policies.reference import (
+    CALA_REFERENCE,
+    CALA_SERVICE_REFERENCE,
+    Decider,
+    make_decider,
+)
 from crucible.envs.supplygym.policies.views import call, parse_status
 
 SUPPLIERS = [f"S{k:02d}" for k in range(1, 11)]
-# The legacy regimes retain their checkpoint; Cala has its own frozen reference.
+# Legacy versions retain their checkpoints; Cala @3 uses a public-signal rule.
 TASK_IDS = ("supplygym", "supplygym-fresh", "supplygym-cala")
 
 
@@ -50,6 +55,8 @@ class _Loop:
         self._reference = CALA_REFERENCE if task_spec.id == "supplygym-cala" else "ppo"
         if task_spec.version >= 2:
             self._reference = "availability"
+        if task_spec.id == "supplygym-cala" and task_spec.version == 3:
+            self._reference = CALA_SERVICE_REFERENCE
         self._has_finish = any(t.name == "finish" for t in tools)
         self._weeks, self._started, self._decider = 0, False, self._make()
 
@@ -134,7 +141,7 @@ class MaxExpedite(_Loop):
 
 @_register("reference")
 class Reference(_Loop):
-    """The reference (PPO) policy played over the tools."""
+    """The version-specific reference policy played over the tools."""
 
     name = "reference"
 

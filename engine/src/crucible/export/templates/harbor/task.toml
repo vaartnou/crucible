@@ -1,4 +1,4 @@
-schema_version = "1.1"
+schema_version = "1.4"
 
 [task]
 name = "@@TASK_NAME@@"
@@ -39,3 +39,4 @@ args = []
 
 [solution.env]
 CRUCIBLE_POLICY = "@@SOLUTION_POLICY@@"
+SOLUTION_TOKEN = "@@SOLUTION_TOKEN@@"

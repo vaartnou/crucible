@@ -140,9 +140,7 @@ async def freeze_suite(
                     )
                 )
     name = (
-        "supplygym-cala-v3"
-        if tasks == ("supplygym-cala@3",)
-        else "supplygym-outcomes-formulas-v1"
+        "supplygym-cala-v3" if tasks == ("supplygym-cala@3",) else "supplygym-outcomes-formulas-v1"
     )
     return Suite(
         name=name,
