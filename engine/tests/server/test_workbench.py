@@ -46,6 +46,8 @@ async def test_ui_meta_lists_oncall_tools_and_policies(client: httpx.AsyncClient
     assert r.status_code == 200
     body = r.json()
     assert "oncall@1" in body["tasks"]
+    assert "supplygym-cala@3" in body["tasks"]
+    assert body["default_task"] == "oncall@1"
     assert "graph_walk" in body["policies"]["oncall@1"]
     assert "reference" in body["policies"]["oncall@1"]
     tool_names = {t["name"] for t in body["tools"]["oncall@1"]}

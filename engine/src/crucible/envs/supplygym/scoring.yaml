@@ -1,0 +1,2 @@
+headroom_floor: 1000     # denominator floor ($): the reference gains about $2k per episode over the default
+reference: ppo           # reference policy replayed for the denominator (ppo | ss)

@@ -94,7 +94,7 @@ def test_summarise() -> None:
 
 def test_tasks_and_policies() -> None:
     tasks = runner.invoke(app, ["tasks"]).output.split()
-    assert "guess@1" in tasks and "guess@1" in tasks
+    assert "guess@1" in tasks and "oncall@1" in tasks and "supplygym-cala@3" in tasks
     policies = runner.invoke(app, ["policies", "--task", "guess@1"]).output.split()
     for name in ("reference", "do_nothing"):
         assert name in policies

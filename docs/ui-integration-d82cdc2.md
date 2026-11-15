@@ -32,3 +32,9 @@ No new paid model trial was launched during this integration check. Harbor comma
 The GitHub Actions workflow now triggers for `web/**` changes and runs a Node 24 frontend job with `npm ci`, `npm test` and `npm run build`. The Docker job requires both backend and frontend jobs to pass. The UI setup instructions include the frontend test command.
 
 The local validation server is available at [127.0.0.1:8765](http://127.0.0.1:8765). It reads existing Harbor outputs from the configured jobs directory and writes manual test sessions separately under `runs/integration-d82cdc2/sessions`.
+
+## Merge compatibility with main
+
+Merged `cea3499` from main while preserving SupplyGym/Cala registrations, pretrained policies, golden scores, and spectator support alongside oncall. Retired environment registrations and the removed direct model runner remain absent. Sidecar cleanup retains error-aware transcript finalization and spectator finalization.
+
+Post-merge validation: **297 core/API/UI/spectator/golden tests passed** and **213 SupplyGym/environment-generic tests passed**, with 23 skips and 3 expected failures inherited from that test set. Seven unchanged oncall generic cases were deselected from the SupplyGym run; the oncall simulator/package hashes match the prior full validation. All six frontend tests, production build, Ruff, formatting, and strict Pyright pass. Detailed local evidence is under `runs/merge-main-pr50/`.

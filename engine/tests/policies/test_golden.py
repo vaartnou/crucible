@@ -9,14 +9,15 @@ import pytest
 
 from crucible.core.executor import LocalExecutor
 from crucible.core.jobs import Job
-from crucible.core.registry import get_task
+from crucible.core.registry import get_task, list_tasks
 
 GOLDEN = Path(__file__).parent / "golden_scores.json"
 SEEDS = list(range(10))
 # Production oncall scores remain experimental until measured difficulty gates pass.
 POLICIES: dict[str, list[str]] = {
     ref: ["reference", *type(get_task(ref)).checks.exploit_policies, "do_nothing"]
-    for ref in ["guess@1"]
+    for ref in list_tasks()
+    if ref != "oncall@1"
 }
 CASES = [(task, policy) for task, names in POLICIES.items() for policy in names]
 MESSAGE = (

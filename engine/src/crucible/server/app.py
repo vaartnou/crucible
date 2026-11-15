@@ -25,6 +25,7 @@ from crucible.core.transcript import StopReason, TranscriptWriter, read_transcri
 from crucible.server.logging import configure_logging
 from crucible.server.mcp import build_mcp_server
 from crucible.server.settings import Settings
+from crucible.server.spectator import Spectator
 from crucible.server.store import Entry, InMemorySessionStore, SessionStore
 from crucible.server.workbench import WorkbenchManager, add_workbench_routes
 
@@ -157,8 +158,21 @@ def _add_sidecar_routes(app: FastAPI, settings: Settings, logger: logging.Logger
     path = settings.runs_dir / "episodes" / f"sidecar-{task.spec.ref}-{seed}.jsonl"
     session = EpisodeSession(task, seed, TranscriptWriter(path), salt=settings.sidecar_salt)
     lock = asyncio.Lock()
+    spectator = (
+        Spectator(
+            settings.spectator_path,
+            task,
+            seed,
+            settings.sidecar_salt or "",
+            settings.spectator_run_id,
+            settings.spectator_strategy,
+        )
+        if settings.spectator_path
+        else None
+    )
+    app.state.spectator = spectator
     manager = StreamableHTTPSessionManager(
-        build_mcp_server(session, lock), json_response=True, stateless=True
+        build_mcp_server(session, lock, spectator), json_response=True, stateless=True
     )
     app.state.sidecar_session = session
     app.state.mcp_manager = manager
@@ -204,6 +218,8 @@ def _add_sidecar_routes(app: FastAPI, settings: Settings, logger: logging.Logger
         async with lock:
             reason, score = await session.close()
             steps = session.steps_used
+            if spectator:
+                spectator.finalize(reason, score)
         transcript = read_transcript(path)
         records = [transcript.header, *transcript.steps, transcript.footer]
         logger.info("episode graded")
@@ -266,7 +282,9 @@ def create_app(settings: Settings | None = None, store: SessionStore | None = No
             raise
         finally:
             try:
-                await session.close(error)
+                reason, score = await session.close(error)
+                if app.state.spectator:
+                    app.state.spectator.finalize(reason, score)
             except Exception:
                 if error is None:
                     raise

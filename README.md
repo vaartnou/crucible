@@ -11,7 +11,7 @@ uv run --directory engine pytest -q
 uv run --directory engine pyright
 ```
 
-See [using environments](docs/using-environments.md), [concepts](docs/concepts.md), and [adding an environment](docs/adding-an-environment.md). Production wheels ship only oncall; the guess task is a test fixture.
+See [using environments](docs/using-environments.md), [concepts](docs/concepts.md), and [adding an environment](docs/adding-an-environment.md). Production wheels ship oncall and SupplyGym/Cala; the guess task is a test fixture. SupplyGym documentation is in [docs/supplygym](docs/supplygym/).
 
 Implementation scope, measured results and the tight feedback commands: [oncall status](docs/oncall-status.md).
 

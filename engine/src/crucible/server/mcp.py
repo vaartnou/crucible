@@ -11,9 +11,12 @@ from pydantic import JsonValue
 
 from crucible.core.session import EpisodeSession
 from crucible.core.tools import ToolCall
+from crucible.server.spectator import Spectator
 
 
-def build_mcp_server(session: EpisodeSession, lock: asyncio.Lock) -> Server[dict[str, Any]]:
+def build_mcp_server(
+    session: EpisodeSession, lock: asyncio.Lock, spectator: Spectator | None = None
+) -> Server[dict[str, Any]]:
     """Build the low-level MCP server. Tools come from the task's `ToolSpec`s at runtime.
 
     `lock` allows one call at a time, as in the HTTP API. A bad call never raises: the
@@ -36,7 +39,20 @@ def build_mcp_server(session: EpisodeSession, lock: asyncio.Lock) -> Server[dict
     ) -> types.CallToolResult:
         args: dict[str, JsonValue] = dict(params.arguments or {})
         async with lock:
-            result = await session.step(ToolCall(name=params.name, args=args))
+            call = ToolCall(name=params.name, args=args)
+            before = spectator.before_step(call) if spectator else None
+            result = await session.step(call)
+            if spectator:
+                try:
+                    spectator.after_step(call, result, before)
+                except OSError:
+                    # The decision already happened. Stop rather than allow an unseen
+                    # continuation after a failed live write.
+                    await session.close(error="spectator feed write failed")
+                    raise
+                if result.ok and session.task.done():
+                    reason, score = await session.close()
+                    spectator.finalize(reason, score)
         dumped = result.model_dump(mode="json")
         return types.CallToolResult(
             content=[types.TextContent(text=json.dumps(dumped, sort_keys=True))],

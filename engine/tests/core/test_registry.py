@@ -183,7 +183,10 @@ def test_builtins_loaded_once(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_builtin_envs_declared_as_entry_points() -> None:
-    assert registry.list_envs() == [("oncall", "crucible.envs.oncall")]
+    assert registry.list_envs() == [
+        ("oncall", "crucible.envs.oncall"),
+        ("supplygym", "crucible.envs.supplygym"),
+    ]
 
 
 def test_plugin_env_registers_through_entry_point(monkeypatch: pytest.MonkeyPatch) -> None:
