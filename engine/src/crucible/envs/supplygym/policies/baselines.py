@@ -41,13 +41,17 @@ class _Loop:
         self._started = False
         self._decider: Decider | None = None
         self._reference = "ppo"
+        self._service_buffer = False
 
     def _make(self) -> Decider:
         raise NotImplementedError
 
     async def reset(self, task_spec: TaskSpec, tools: list[ToolSpec], instruction: str) -> None:
+        self._service_buffer = task_spec.id == "supplygym-cala" and task_spec.version == 3
         self._reference = CALA_REFERENCE if task_spec.id == "supplygym-cala" else "ppo"
-        if task_spec.version >= 2:
+        if task_spec.version >= 2 and not (
+            task_spec.id == "supplygym-cala" and task_spec.version == 3
+        ):
             self._reference = "availability"
         self._weeks, self._started, self._decider = 0, False, self._make()
 
@@ -137,7 +141,25 @@ class Reference(_Loop):
     name = "reference"
 
     def _make(self) -> Decider:
-        return make_decider(self._reference)
+        decider = make_decider(self._reference)
+        return _ServiceBufferedPpo(decider) if self._service_buffer else decider
+
+
+class _ServiceBufferedPpo:
+    """Keep PPO's adaptive allocation with one day of service safety stock for v3.
+
+    The frozen checkpoint optimized terminal profit, not v3's stronger service
+    objective. This public-control buffer preserves its learned allocation while
+    reducing service failures without unconditional expensive expediting.
+    """
+
+    def __init__(self, decider: Decider) -> None:
+        self.decider = decider
+
+    def decide(self, status: dict[str, Any]) -> dict[str, Any]:
+        args = self.decider.decide(status)
+        args["safety_stock_days"] = max(1.0, args["safety_stock_days"])
+        return args
 
 
 @register_policy("transfer_ppo", "supplygym-cala")

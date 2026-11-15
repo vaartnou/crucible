@@ -297,8 +297,9 @@ async def test_cala_upper_bound_is_fixed_and_grading_is_read_only(salt: str) -> 
 
     task = get_task("supplygym-cala@3")
     await task.reset(1000, salt=salt)
-    assert isinstance(task, OutcomeTask) and task._play is not None
-    expected = surplus_upper_bound(task._play) / 100
+    assert isinstance(task, OutcomeTask)
+    initial_play = Play(1000, 2, salt)
+    expected = surplus_upper_bound(initial_play) / 100
     initial = snapshot(task)
     assert expected > 0
     assert (await task.grade()).total == 0
@@ -309,15 +310,17 @@ async def test_cala_upper_bound_is_fixed_and_grading_is_read_only(salt: str) -> 
     score = await task.grade()
     assert score.flags["completed"]
     assert score.breakdown["surplus_upper_bound"] == expected
-    assert score.breakdown["operating_surplus"] <= expected
+    assert score.breakdown["terminal_surplus"] <= expected
+    floor = score.breakdown["surplus_floor"]
     assert score.total == pytest.approx(
-        max(0, min(1, score.breakdown["operating_surplus"] / expected))
+        max(0, min(1, (score.breakdown["adjusted_surplus"] - floor) / (expected - floor)))
     )
+    assert score.total < 0.3
     assert snapshot(task) == before
     assert await task.grade() == score
 
 
-async def test_cala_v3_reference_avoids_ppo(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_cala_v3_reference_uses_cala_ppo(monkeypatch: pytest.MonkeyPatch) -> None:
     selected: list[str] = []
 
     def capture(name: str) -> Decider:
@@ -328,4 +331,75 @@ async def test_cala_v3_reference_avoids_ppo(monkeypatch: pytest.MonkeyPatch) -> 
     task = get_task("supplygym-cala@3")
     policy = get_policy("reference", task.spec.ref)
     await policy.reset(task.spec, task.tools(), task.instruction())
-    assert selected == ["availability"]
+    assert selected == ["cala_ppo"]
+
+
+@pytest.mark.parametrize(
+    "opening_onhand,opening_pipeline", [(0, 100000), (100000, 0), (50000, 50000)]
+)
+def test_terminal_certificate_counts_prepaid_units_once(
+    opening_onhand: int,
+    opening_pipeline: int,
+) -> None:
+    from crucible.envs.supplygym.cala_upper_bound import surplus_upper_bound
+    from crucible.envs.supplygym.sim import TERMINAL_VALUE
+
+    play = Play(1000, 2)
+    env: Any = play.env
+    env.onhand = opening_onhand
+    # This prepaid shipment never arrives during the year but retains salvage value.
+    env.orders = [
+        {
+            "sup": 0,
+            "arr": 1000,
+            "nom": 1000,
+            "rev": 0,
+            "qty": opening_pipeline,
+            "ordered": opening_pipeline,
+        }
+    ]
+    bound = surplus_upper_bound(play)
+    demand = sum(int(value) for value in env.tape.demand[: env.horizon])
+    assert bound == 490 * demand + 1010 * (opening_onhand + opening_pipeline)
+    # The full simulator must obey the *unclipped* dollar certificate.
+    for _ in range(53):
+        play.apply({})
+    terminal = TERMINAL_VALUE * (env.onhand + sum(order["qty"] for order in env.orders))
+    operating = grade_outcomes(play).breakdown["operating_surplus"]
+    assert operating + terminal <= bound / 100
+    with pytest.raises(ValueError, match="reset"):
+        surplus_upper_bound(play)
+
+
+async def test_v3_floor_is_salted_deterministic_and_does_not_leak() -> None:
+    floors: list[float] = []
+    for salt in ["", "private-salt", "private-salt"]:
+        task = get_task("supplygym-cala@3")
+        observation = await task.reset(1000, salt=salt)
+        score = await task.grade()
+        floors.append(score.breakdown["surplus_floor"])
+        assert score.total == 0.0
+        assert "surplus_floor" not in observation.model_dump_json()
+        assert "surplus_upper_bound" not in observation.model_dump_json()
+        assert isinstance(task, OutcomeTask)
+        before = snapshot(task)
+        for _ in range(120):
+            if task.done():
+                break
+            await task.step(ToolCall(name="get_status"))
+        assert (await task.grade()).total == 0.0
+        assert snapshot(task)["day"] == before["day"] == 0
+    assert floors[0] != floors[1]
+    assert floors[1] == floors[2]
+
+
+@pytest.mark.parametrize("weeks", [1, 26, 52])
+async def test_v3_incomplete_and_early_completion_stay_zero(weeks: int) -> None:
+    task = get_task("supplygym-cala@3")
+    await task.reset(1000)
+    for _ in range(weeks):
+        assert (await task.step(ToolCall(name="set_controls"))).ok
+    assert (await task.grade()).total == 0.0
+    assert (await task.step(ToolCall(name="finish"))).ok
+    assert task.done()
+    assert (await task.grade()).total == 0.0

@@ -11,6 +11,7 @@ from functools import cache
 from typing import Any
 
 import pytest
+from pydantic import JsonValue
 
 from crucible.core.scoring import Score
 from crucible.envs.supplygym import grader
@@ -194,3 +195,93 @@ def test_opening_expedite(weeks: int) -> None:
             play.apply({"expedite_fraction": 0.3 if play.weeks < weeks else 0.0})
 
     _gate(f"opening_expedite_{weeks}", _scores(strategy))
+
+
+async def _v3_rollout(
+    seed: int,
+    name: str,
+    *,
+    starve: bool = False,
+    controls: dict[str, JsonValue] | None = None,
+) -> Score:
+    """Exercise the public tools, including the registered PPO reference binding."""
+    from crucible.core.registry import get_policy, get_task
+    from crucible.core.tools import ToolCall
+
+    task = get_task("supplygym-cala@3")
+    observation = await task.reset(seed)
+    policy = get_policy(name, task.spec.ref)
+    await policy.reset(task.spec, task.tools(), task.instruction())
+    weeks = 0
+    while not task.done():
+        if controls is None:
+            action = await policy.act(observation)
+            if action is None:
+                break
+        else:
+            action = ToolCall(name="set_controls", args=controls)
+        if action.name == "set_controls":
+            if starve and weeks >= 49:
+                action = action.model_copy(
+                    update={
+                        "args": {
+                            **action.args,
+                            "order_multiplier": math.exp(-0.5),
+                            "safety_stock_days": 0.0,
+                        }
+                    }
+                )
+            weeks += 1
+        result = await task.step(action)
+        assert result.ok
+        observation = observation.model_copy(update={"last_result": result})
+    score = await task.grade()
+    assert 0.0 <= score.total <= 1.0
+    assert score.breakdown["terminal_surplus"] <= score.breakdown["surplus_upper_bound"] + 1e-7
+    return score
+
+
+async def test_v3_adversarial_dev_bank() -> None:
+    """Freeze the audit's attacks on ten dev scenarios, with no observation privileges."""
+    names = ["ss", "base_stock", "fixed_lot", "fill_adjusted_base_stock"]
+    totals: dict[str, float] = {name: 0.0 for name in ["reference", *names]}
+    sweeps = [
+        (multiplier, safety)
+        for multiplier in [math.exp(-0.5), 0.8, 0.9, 1.0, 1.1, 1.2, math.exp(0.5)]
+        for safety in [0.0, 3.0]
+    ]
+    sweep_totals = [0.0] * len(sweeps)
+    for seed in range(1000, 1010):
+        reference = await _v3_rollout(seed, "reference")
+        starvation = await _v3_rollout(seed, "reference", starve=True)
+        blind = await _v3_rollout(
+            seed,
+            "ss",
+            controls={
+                "order_multiplier": 0.8,
+                "safety_stock_days": 0.0,
+            },
+        )
+        assert reference.total > 0, seed
+        assert starvation.total <= reference.total, seed
+        assert blind.total < reference.total, seed
+        totals["reference"] += reference.total
+        for name in names:
+            totals[name] += (await _v3_rollout(seed, name)).total
+        for index, (multiplier, safety) in enumerate(sweeps):
+            sweep_totals[index] += (
+                await _v3_rollout(
+                    seed,
+                    "ss",
+                    controls={
+                        "order_multiplier": multiplier,
+                        "safety_stock_days": safety,
+                    },
+                )
+            ).total
+        for name in ["do_nothing", "stop_early"]:
+            assert (await _v3_rollout(seed, name)).total == 0.0
+    for name in names:
+        assert totals["reference"] > totals[name], totals
+    for sweep, total in zip(sweeps, sweep_totals, strict=True):
+        assert totals["reference"] > total, (sweep, total, totals)
