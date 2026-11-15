@@ -58,7 +58,9 @@ bash infra/harbor-worker.sh prepare
 
 The script installs Harbor 0.26.0 in an isolated Python 3.13 tool environment, installs the
 locked engine with Python 3.14, exports seeds 0–2, and builds the simulator sidecar image.
-OpenCode 1.19.5 is installed by Harbor inside agent containers. Re-running prepare preserves
+The demo agent image preinstalls OpenCode 1.19.5 with Node 22 so each trial can reuse Docker
+build layers instead of installing Node and OpenCode during startup. Normal Harbor exports
+keep their original agent image. Re-running prepare preserves
 the existing exports and salts. Set `HARBOR_SEEDS=0` before prepare for a single-trial demo.
 
 Exit SSH, then launch a managed background command from your computer (adjust the checkout

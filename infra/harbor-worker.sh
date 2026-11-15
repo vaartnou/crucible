@@ -20,6 +20,16 @@ case "${1:-}" in
       uv run --directory engine crucible export harbor --task oncall@1 \
         --seeds "${HARBOR_SEEDS:-0-2}" --out "$HARBOR_EXPORTS_DIR/oncall-demo"
     fi
+    # Cache OpenCode in the demo agent image instead of installing it in every trial.
+    first_environment=""
+    for task_dir in "$HARBOR_EXPORTS_DIR/oncall-demo"/*; do
+      if [ -f "$task_dir/task.toml" ]; then
+        cp infra/HarborAgent.Dockerfile "$task_dir/environment/Dockerfile"
+        first_environment="${first_environment:-$task_dir/environment}"
+      fi
+    done
+    : "${first_environment:?No prepared oncall tasks found}"
+    docker build -t crucible-demo-agent:1.19.5 "$first_environment"
     # Preserve existing salted exports; rebuilding the shared image is safe to repeat.
     (cd "$HARBOR_EXPORTS_DIR/oncall-demo" && sh build-sidecar.sh)
     ;;
