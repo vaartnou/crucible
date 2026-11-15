@@ -12,6 +12,7 @@ refs raise `ValueError`. An entry point that fails to import raises `EnvLoadErro
 """
 
 import importlib
+import os
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from importlib.metadata import EntryPoint, entry_points
@@ -48,7 +49,18 @@ class EnvLoadError(ImportError):
 
 def _env_entry_points() -> list[EntryPoint]:
     """Entry points in the `crucible.envs` group, sorted by name so load order is stable."""
-    return sorted(entry_points(group=ENTRY_POINT_GROUP), key=lambda ep: ep.name)
+    available = sorted(entry_points(group=ENTRY_POINT_GROUP), key=lambda ep: ep.name)
+    configured = os.environ.get("CRUCIBLE_ENVIRONMENTS")
+    if configured is None:
+        return available
+    selected = {name.strip() for name in configured.split(",") if name.strip()}
+    unknown = selected - {ep.name for ep in available}
+    if not selected or unknown:
+        raise EnvLoadError(
+            "CRUCIBLE_ENVIRONMENTS must name installed environment entry points; "
+            f"available: {', '.join(ep.name for ep in available)}"
+        )
+    return [ep for ep in available if ep.name in selected]
 
 
 def _load_builtins() -> None:
