@@ -47,7 +47,7 @@ class _Loop:
 
     async def reset(self, task_spec: TaskSpec, tools: list[ToolSpec], instruction: str) -> None:
         self._reference = CALA_REFERENCE if task_spec.id == "supplygym-cala" else "ppo"
-        if task_spec.version == 2:
+        if task_spec.version >= 2:
             self._reference = "availability"
         self._weeks, self._started, self._decider = 0, False, self._make()
 

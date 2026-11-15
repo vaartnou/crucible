@@ -1,5 +1,8 @@
 # SupplyGym outcome scoring
 
+For upper-bound scoring in the Harbor verifier and live weekly records, see
+[Cala live demo and upper-bound evaluation](CALA_LIVE_DEMO.md).
+
 ## Cala hindsight benchmark
 
 For a single Cala seed, run the frontier model and any other scheduled external

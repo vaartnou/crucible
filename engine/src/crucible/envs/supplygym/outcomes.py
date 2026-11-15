@@ -4,7 +4,7 @@ import hashlib
 import json
 import math
 from pathlib import Path
-from typing import Any, ClassVar, Literal
+from typing import Any, ClassVar, Literal, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -182,6 +182,13 @@ class SupplyGymFreshOutcomes(OutcomeTask, SupplyGymFreshTask):
     regime = 1
 
 
+class CalaSpectatorSnapshot(TypedDict):
+    week: int
+    end_day: int
+    operating_surplus: float
+    observation: dict[str, Any]
+
+
 @register_task
 class SupplyGymCalaOutcomes(OutcomeTask, SupplyGymCalaTask):
     spec = SupplyGymCalaTask.spec.model_copy(update={"version": 2})
@@ -189,3 +196,62 @@ class SupplyGymCalaOutcomes(OutcomeTask, SupplyGymCalaTask):
     scoring_hash = hashlib.sha256(
         json.dumps({"rubric": RUBRIC_HASH, "world": cala_world_identity()}, sort_keys=True).encode()
     ).hexdigest()
+
+    def spectator_snapshot(self) -> CalaSpectatorSnapshot:
+        """Read public observations and unrounded accounting for the trusted host."""
+        play = self._play
+        if play is None:
+            raise ValueError("Episode not started")
+        return {
+            "week": play.weeks,
+            "end_day": play.env.day,
+            "operating_surplus": grade_outcomes(play).breakdown["operating_surplus"],
+            "observation": play.status(),
+        }
+
+
+@register_task
+class SupplyGymCalaUpperBound(SupplyGymCalaOutcomes):
+    """Cala controls with a fixed, scenario-specific optimistic surplus denominator."""
+
+    spec = SupplyGymCalaTask.spec.model_copy(update={"version": 3})
+    scoring_hash = hashlib.sha256(
+        json.dumps(
+            {"method": "cala-surplus-upper-bound-v1", "world": cala_world_identity()},
+            sort_keys=True,
+        ).encode()
+    ).hexdigest()
+
+    async def reset(self, seed: int, difficulty: int = 0, *, salt: str | None = None):
+        from crucible.envs.supplygym.cala_upper_bound import surplus_upper_bound
+
+        observation = await super().reset(seed, difficulty, salt=salt)
+        assert self._play is not None
+        self._upper_bound_cents = surplus_upper_bound(self._play)
+        return observation
+
+    async def grade(self) -> Score:
+        if self._play is None:
+            raise ValueError("Episode not started")
+        accounting = grade_outcomes(self._play)
+        bound = self._upper_bound_cents / 100
+        total = 0.0
+        if accounting.flags["completed"] and bound > 0:
+            total = max(0.0, min(1.0, accounting.breakdown["operating_surplus"] / bound))
+        return Score(
+            total=total,
+            breakdown={**accounting.breakdown, "surplus_upper_bound": bound},
+            flags={"completed": accounting.flags["completed"]},
+        )
+
+    def _scoring_instruction(self) -> str:
+        return (
+            "Complete all 365 days to earn credit; an unfinished year scores zero. "
+            "Your score is operating surplus divided by a positive theoretical upper bound "
+            "for this year, clipped to [0, 1]. The bound is calculated before your first "
+            "action from the scenario's hidden demand and disruptions, allowing optimistic "
+            "purchases and shipments. Operating surplus is sales revenue minus purchase, "
+            "holding, lost-sale penalties, expedite and switching costs incurred during "
+            "the year. Opening stock and freight are prepaid; terminal inventory receives "
+            "no credit. The verifier uses its own ledger."
+        )

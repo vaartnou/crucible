@@ -14,6 +14,14 @@ frozen schedule and saves every outcome and audit trace. Run
 `freeze`, `run`, and `audit` commands. The specification and measured control
 results are in [outcome scoring](../../../../../docs/supplygym/OUTCOME_SCORING.md).
 
+Opt-in `supplygym-cala@3` retains the version 2 controls and completion rule. Its
+score is completed operating surplus divided by a positive scenario-specific theoretical
+upper bound, clamped to [0, 1]; unfinished episodes score zero. The verifier computes the
+bound from the seeded and salted hidden scenario before any action. It relaxes purchase
+and shipment constraints, so the bound need not be attainable. Trusted score breakdowns
+include the bound and ledger accounting. Export it using the normal Harbor export command
+with `--task supplygym-cala@3`.
+
 | | |
 |---|---|
 | Refs | `supplygym@1` (calibration regime), `supplygym-fresh@1` (fresh regime) |

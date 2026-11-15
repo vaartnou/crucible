@@ -289,3 +289,43 @@ async def test_audit_replays_calls_and_rejects_tampered_score(
     scenarios.write_json(path, report)
     with pytest.raises(ValueError, match="Replay score"):
         await scenarios.audit_report(path)
+
+
+@pytest.mark.parametrize("salt", ["", "private-salt"])
+async def test_cala_upper_bound_is_fixed_and_grading_is_read_only(salt: str) -> None:
+    from crucible.envs.supplygym.cala_upper_bound import surplus_upper_bound
+
+    task = get_task("supplygym-cala@3")
+    await task.reset(1000, salt=salt)
+    assert isinstance(task, OutcomeTask) and task._play is not None
+    expected = surplus_upper_bound(task._play) / 100
+    initial = snapshot(task)
+    assert expected > 0
+    assert (await task.grade()).total == 0
+    assert snapshot(task) == initial
+    for _ in range(53):
+        assert (await task.step(ToolCall(name="set_controls", args={}))).ok
+    before = snapshot(task)
+    score = await task.grade()
+    assert score.flags["completed"]
+    assert score.breakdown["surplus_upper_bound"] == expected
+    assert score.breakdown["operating_surplus"] <= expected
+    assert score.total == pytest.approx(
+        max(0, min(1, score.breakdown["operating_surplus"] / expected))
+    )
+    assert snapshot(task) == before
+    assert await task.grade() == score
+
+
+async def test_cala_v3_reference_avoids_ppo(monkeypatch: pytest.MonkeyPatch) -> None:
+    selected: list[str] = []
+
+    def capture(name: str) -> Decider:
+        selected.append(name)
+        return make_decider(name)
+
+    monkeypatch.setattr(baselines, "make_decider", capture)
+    task = get_task("supplygym-cala@3")
+    policy = get_policy("reference", task.spec.ref)
+    await policy.reset(task.spec, task.tools(), task.instruction())
+    assert selected == ["availability"]
