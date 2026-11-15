@@ -99,7 +99,10 @@ class Play:
         alt.__dict__ = {
             k: v if k in ("world", "tape") else copy.deepcopy(v) for k, v in env.__dict__.items()
         }
+        alt.replenishment = "ss"
         alt.step(np.zeros(ACT_DIM))
+        if "replenishment" in args:
+            env.replenishment = args["replenishment"]
         _, _, _, _, info = env.step(a)
         for item in info["news"] + info["rumors"] + info["updates"]:
             self.log.append({k: v for k, v in item.items() if k not in ("node", "severity")})
@@ -116,7 +119,9 @@ class Play:
             "profit": round(float(env.tot["profit"] - t0["profit"]), 2),
             "delta_vs_default": round(float(env.tot["profit"] - alt.tot["profit"]), 2),
             "previous_controls": before,
-            "controls_changed": sum(1 for k in after if after[k] != before[k]),
+            "controls_changed": sum(
+                before.get(k) != after.get(k) for k in before.keys() | after.keys()
+            ),
         }
         return Week(
             profit=env.tot["profit"] - t0["profit"],

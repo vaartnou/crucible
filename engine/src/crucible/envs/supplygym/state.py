@@ -36,6 +36,7 @@ def status_controls(env: SupplyEnv) -> dict[str, Any]:
         "safety_stock_days": _r(3.0 * max(0.0, float(c[13]))),
         "order_multiplier": _r(math.exp(0.5 * float(c[12]))),
         "expedite_fraction": _r(0.3 * max(0.0, float(c[14]))),
+        **({"replenishment": env.replenishment} if env.replenishment != "ss" else {}),
     }
 
 

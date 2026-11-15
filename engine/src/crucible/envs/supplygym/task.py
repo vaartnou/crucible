@@ -153,6 +153,9 @@ class SupplyGymTask(Task):
     def tools(self) -> list[ToolSpec]:
         return list(_TOOLS)
 
+    def _validate_call(self, call: ToolCall) -> BaseModel | ToolResult:
+        return validate_call(_TOOL_MAP, call)
+
     def done(self) -> bool:
         return self._play is not None and self._play.done
 
@@ -189,7 +192,7 @@ class SupplyGymTask(Task):
             return _fail("Episode not started: call reset first")
         if play.done:
             return _fail("Episode is over")
-        parsed = validate_call(_TOOL_MAP, call)
+        parsed = self._validate_call(call)
         if isinstance(parsed, ToolResult):
             return parsed
         if isinstance(parsed, ControlsArgs):

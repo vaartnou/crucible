@@ -5,7 +5,6 @@
 """
 
 import json
-import math
 from collections.abc import Callable
 from typing import Any
 
@@ -48,6 +47,8 @@ class _Loop:
 
     async def reset(self, task_spec: TaskSpec, tools: list[ToolSpec], instruction: str) -> None:
         self._reference = CALA_REFERENCE if task_spec.id == "supplygym-cala" else "ppo"
+        if task_spec.version == 2:
+            self._reference = "availability"
         self._weeks, self._started, self._decider = 0, False, self._make()
 
     async def act(self, obs: Observation) -> ToolCall | None:
@@ -96,6 +97,31 @@ class _Fixed:
         return dict(self.args)
 
 
+class _ReplenishmentFormula(_Loop):
+    async def reset(self, task_spec: TaskSpec, tools: list[ToolSpec], instruction: str) -> None:
+        if task_spec.version < 2:
+            raise ValueError("Replenishment formulas require a SupplyGym version 2 task")
+        await super().reset(task_spec, tools, instruction)
+
+    def _make(self) -> Decider:
+        return _Fixed({"replenishment": self.name})
+
+
+@_register("base_stock")
+class BaseStock(_ReplenishmentFormula):
+    name = "base_stock"
+
+
+@_register("fixed_lot")
+class FixedLot(_ReplenishmentFormula):
+    name = "fixed_lot"
+
+
+@_register("fill_adjusted_base_stock")
+class FillAdjustedBaseStock(_ReplenishmentFormula):
+    name = "fill_adjusted_base_stock"
+
+
 @_register("max_expedite")
 class MaxExpedite(_Loop):
     name = "max_expedite"
@@ -131,14 +157,7 @@ class Availability(_Loop):
     name = "availability"
 
     def _make(self) -> Decider:
-        return self
+        return make_decider("availability")
 
     def decide(self, status: dict[str, Any]) -> dict[str, Any]:
-        weights = {}
-        for supplier in status["suppliers"]:
-            if supplier["kind"] == "direct":
-                fill = max(0.1, min(1.0, supplier["fill_ratio"]))
-                risk_estimate = 1.0 - (supplier["risk"] - 0.15) / 0.7
-                availability = (fill + max(0.1, min(1.0, risk_estimate))) / 2.0
-                weights[supplier["id"]] = max(math.exp(-4), availability**2)
-        return {"supplier_weights": weights}
+        return make_decider("availability").decide(status)

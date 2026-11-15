@@ -54,6 +54,20 @@ class DefaultRule:
         return {}
 
 
+class AvailabilityRule:
+    """Deterministic public-observation reference for the version 2 rubric."""
+
+    def decide(self, status: dict[str, Any]) -> dict[str, Any]:
+        weights = {}
+        for supplier in status["suppliers"]:
+            if supplier["kind"] == "direct":
+                fill = max(0.1, min(1.0, supplier["fill_ratio"]))
+                risk_estimate = 1.0 - (supplier["risk"] - 0.15) / 0.7
+                availability = (fill + max(0.1, min(1.0, risk_estimate))) / 2.0
+                weights[supplier["id"]] = max(math.exp(-4), availability**2)
+        return {"supplier_weights": weights}
+
+
 def _next_alt(view: StatusView) -> str | None:
     for s in view.suppliers:
         if s.kind == "alt" and s.state == "not_approved":
@@ -97,6 +111,8 @@ class PpoDecider:
 
 
 def make_decider(name: str) -> Decider:
+    if name == "availability":
+        return AvailabilityRule()
     if name == "ss":
         return DefaultRule()
     if name == "ppo":

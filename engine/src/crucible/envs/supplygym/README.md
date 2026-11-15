@@ -6,6 +6,14 @@ two pricier alternative suppliers. Hidden disruptions (strikes, port closures, f
 bankruptcies) hit suppliers and spread down the tiers. The agent sees noisy news, rumors, risk
 scores, late orders and fill ratios. Synthetic supplier graph; not real data.
 
+Version 2 is available as `supplygym@2`, `supplygym-fresh@2`, and
+`supplygym-cala@2`. Its fixed outcome rubric awards 1.0, 0.5, or 0.0 for verified
+completion, service, and operating surplus. The scenario runner evaluates a
+frozen schedule and saves every outcome and audit trace. Run
+`python -m crucible.envs.supplygym.scenarios --help` from `engine` for the
+`freeze`, `run`, and `audit` commands. The specification and measured control
+results are in [outcome scoring](../../../../../docs/supplygym/OUTCOME_SCORING.md).
+
 | | |
 |---|---|
 | Refs | `supplygym@1` (calibration regime), `supplygym-fresh@1` (fresh regime) |
