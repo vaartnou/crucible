@@ -109,3 +109,29 @@ async def test_no_hidden_value_in_mcp_results(seed: int, tmp_path: Path) -> None
     for text in texts:
         for word in HIDDEN_WORDS:
             assert word not in text, word
+
+
+@pytest.mark.parametrize("task_ref", ["incident@1", "supplygym-cala@3"])
+async def test_budget_exhaustion_returns_structured_error(tmp_path: Path, task_ref: str) -> None:
+    task = get_task(task_ref)
+    feed = tmp_path / "spectator.jsonl" if task_ref == "supplygym-cala@3" else None
+    tool = "get_briefing" if feed else "get_alerts"
+    async with (
+        live_sidecar(tmp_path, 0, task_ref, spectator_path=feed) as url,
+        Client(f"{url}/mcp") as client,
+    ):
+        for _ in range(task.spec.max_steps):
+            assert not (await client.call_tool(tool, {})).is_error
+        refused = await client.call_tool(tool, {})
+        assert refused.is_error
+        assert structured(refused)["ok"] is False
+        assert "budget" in structured(refused)["error"].lower()
+        if feed:
+            events = [json.loads(line) for line in feed.read_text().splitlines()]
+            assert len(events) == 1
+            assert events[0]["stop_reason"] == "budget_exhausted"
+        grade = await fetch_grade(url, TOKEN)
+        assert grade.stop_reason == "budget_exhausted"
+        assert (await client.call_tool(tool, {})).is_error
+    if feed:
+        assert len(feed.read_text().splitlines()) == 1

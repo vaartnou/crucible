@@ -1,5 +1,6 @@
 """The spectator reads completed public decisions and the authoritative ledger."""
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -72,3 +73,27 @@ async def test_v3_final_records_actual_scorer_and_bound(tmp_path: Path) -> None:
         == score.breakdown["surplus_upper_bound"]
     )
     assert event["simulator_version"]["implementation_sha256"]
+
+
+def test_simulator_digest_normalizes_line_endings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    names = ("sim.py", "cala_sim.py", "play.py", "state.py")
+    contents = {name: f"# {name}\nvalue = 1\n".encode() for name in names}
+    expected = hashlib.sha256()
+    for name, content in contents.items():
+        expected.update(name.encode() + b"\0")
+        expected.update(content)
+    original_read_bytes = Path.read_bytes
+
+    def read_bytes(path: Path) -> bytes:
+        return contents[path.name] if path.name in contents else original_read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", read_bytes)
+    task = get_task("supplygym-cala@3")
+    lf = Spectator(tmp_path / "lf", task, 0, "salt").metadata["simulator_version"]
+    contents = {name: content.replace(b"\n", b"\r\n") for name, content in contents.items()}
+    crlf = Spectator(tmp_path / "crlf", task, 0, "salt").metadata["simulator_version"]
+    assert lf == crlf
+    assert isinstance(lf, dict)
+    assert lf["implementation_sha256"] == expected.hexdigest()

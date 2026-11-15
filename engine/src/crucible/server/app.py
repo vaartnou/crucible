@@ -241,19 +241,20 @@ def create_app(settings: Settings | None = None, store: SessionStore | None = No
         manager: StreamableHTTPSessionManager = app.state.mcp_manager
         job = Job(task=session.task.spec.ref, policy="external", seed=settings.sidecar_seed)
         error: str | None = None
+        started = False
         try:
             await session.start(policy_name="external", job=job)
+            started = True
             async with manager.run():
                 yield
         except BaseException as exc:
             error = type(exc).__name__
             raise
         finally:
-            # Drop a half-written transcript if nobody graded the episode.
-            if not session.closed:
-                reason, score = await session.close()
-                if app.state.spectator:
-                    app.state.spectator.finalize(reason, score)
+            # Preserve lifespan failures and await cleanup even if another caller closed.
+            reason, score = await session.close(error)
+            if started and app.state.spectator:
+                app.state.spectator.finalize(reason, score)
 
     app = FastAPI(
         title="Crucible",

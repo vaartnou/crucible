@@ -2,12 +2,15 @@
 
 import json
 from collections.abc import AsyncIterator
+from contextlib import nullcontext
 from pathlib import Path
 
 import httpx
 import pytest
 
 from crucible.core.registry import get_task
+from crucible.core.tools import Observation
+from crucible.core.transcript import read_transcript
 from crucible.envs.incident.world import make_world
 from crucible.server.app import create_app
 from crucible.server.settings import Settings
@@ -61,6 +64,8 @@ async def test_healthz(client: httpx.AsyncClient) -> None:
 async def test_tasks(client: httpx.AsyncClient) -> None:
     r = await client.get("/v1/tasks")
     assert r.json() == [
+        "backend_probe@1",
+        "fleetbase_dispatch@1",
         "guess@1",
         "incident@1",
         "supplygym@1",
@@ -177,3 +182,69 @@ async def test_no_hidden_leak_in_http_bodies(client: httpx.AsyncClient, seed: in
             if m < world.fault_start:
                 assert bad_id not in text
     assert json.loads(bodies[0][1])["ok"] is True
+
+
+@pytest.mark.parametrize("fail", [False, True])
+async def test_sidecar_shutdown_preserves_errors_and_finalizes_spectator(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fail: bool
+) -> None:
+    path = tmp_path / "spectator.jsonl"
+    app = create_app(
+        Settings(
+            mode="sidecar",
+            sidecar_task="supplygym-cala@3",
+            sidecar_salt="secret",
+            grade_token="token",
+            runs_dir=tmp_path,
+            spectator_path=path,
+        )
+    )
+    releases: list[bool] = []
+
+    async def release() -> None:
+        releases.append(True)
+        raise OSError("cleanup failed")
+
+    monkeypatch.setattr(app.state.sidecar_session.task, "aclose", release)
+    with pytest.RaisesGroup(RuntimeError) if fail else nullcontext():
+        async with app.router.lifespan_context(app):
+            if fail:
+                raise RuntimeError("lifespan failed")
+    assert releases == [True]
+    assert app.state.sidecar_session.cleanup_errors == ["OSError"]
+    transcript = read_transcript(tmp_path / "episodes" / "sidecar-supplygym-cala@3-0.jsonl")
+    assert transcript.footer.error == ("ExceptionGroup" if fail else None)
+    records = [json.loads(line) for line in path.read_text().splitlines()]
+    assert len(records) == 1
+    assert records[0]["stop_reason"] == ("error" if fail else "policy_stop")
+    assert records[0]["score"] == transcript.footer.score.model_dump(mode="json")
+
+
+async def test_failed_sidecar_reset_preserves_error_with_spectator(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "spectator.jsonl"
+    app = create_app(
+        Settings(
+            mode="sidecar",
+            sidecar_task="supplygym-cala@3",
+            sidecar_salt="secret",
+            grade_token="token",
+            runs_dir=tmp_path,
+            spectator_path=path,
+        )
+    )
+
+    async def fail_reset(
+        seed: int, difficulty: int = 0, *, salt: str | None = None
+    ) -> Observation:
+        raise ValueError("reset failed")
+
+    monkeypatch.setattr(app.state.sidecar_session.task, "reset", fail_reset)
+    with pytest.raises(ValueError, match="reset failed"):
+        async with app.router.lifespan_context(app):
+            pytest.fail("startup must fail")
+    assert app.state.sidecar_session.closed
+    assert not path.exists()
+    transcript = read_transcript(tmp_path / "episodes" / "sidecar-supplygym-cala@3-0.jsonl")
+    assert transcript.footer.error == "ValueError"

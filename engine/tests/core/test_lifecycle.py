@@ -112,7 +112,8 @@ async def test_failed_reset_releases_without_grading(tmp_path: Path) -> None:
 
 
 async def test_cancelled_initialization_releases_before_propagating(tmp_path: Path) -> None:
-    task, _, job = make_session(tmp_path)
+    task = ResourceTask(tmp_path / "resource.jsonl")
+    job = Job(task="resource@1", policy="do_nothing", seed=1)
     task.continue_reset.clear()
     run = asyncio.create_task(
         run_episode(task, DoNothing(), 1, job=job, writer=TranscriptWriter(task.path))
