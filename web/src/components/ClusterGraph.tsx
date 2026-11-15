@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { layoutCluster } from '../clusterLayout';
 import { Eye, EyeOff, KeyRound, Maximize2, Radar, ZoomIn, ZoomOut } from 'lucide-react';
 import type { EdgeRecord, FogService, FogState, GodService, GodState } from '../types';
 
@@ -117,52 +118,7 @@ export const ClusterGraph: React.FC<ClusterGraphProps> = ({
       return { nodes: [] as PositionedNode[], edges: [] as EdgeRecord[], canvasWidth: 960, canvasHeight: 420 };
     }
 
-    const byName = new Map(rawServices.map((s) => [s.name, s]));
-    // Assign columns by branch prefix (e.g. `payments-api-42` -> `payments`)
-    const apis = rawServices
-      .filter((s) => s.name !== 'edge-gateway' && s.kind === 'http')
-      .sort((a, b) => a.name.localeCompare(b.name));
-    const caches = rawServices.filter((s) => s.kind === 'cache');
-    const totalCols = Math.max(1, apis.length + caches.length);
-    const colSpacing = totalCols > 5 ? 158 : 185;
-    const width = Math.max(880, totalCols * colSpacing + 120);
-    const height = 430;
-
-    const coords = new Map<string, { x: number; y: number }>();
-    const startX = (width - (totalCols - 1) * colSpacing) / 2;
-
-    if (byName.has('edge-gateway')) {
-      coords.set('edge-gateway', { x: width / 2, y: 52 });
-    }
-
-    let colIdx = 0;
-    for (const c of caches) {
-      coords.set(c.name, { x: startX + colIdx * colSpacing, y: 158 });
-      colIdx += 1;
-    }
-
-    for (const apiSvc of apis) {
-      const x = startX + colIdx * colSpacing;
-      coords.set(apiSvc.name, { x, y: 158 });
-      const workerName = apiSvc.deps.find((d) => byName.has(d));
-      if (workerName) {
-        coords.set(workerName, { x, y: 268 });
-        const workerObj = byName.get(workerName);
-        const dbName = workerObj?.deps.find((d) => byName.has(d));
-        if (dbName) {
-          coords.set(dbName, { x, y: 374 });
-        }
-      }
-      colIdx += 1;
-    }
-
-    // Place any remaining unplaced discovered services cleanly
-    const unplaced = rawServices.filter((s) => !coords.has(s.name));
-    unplaced.forEach((s, idx) => {
-      const rowY = s.kind === 'db' ? 374 : s.kind === 'worker' ? 268 : 158;
-      const spreadX = 100 + ((idx * 165) % Math.max(300, width - 200));
-      coords.set(s.name, { x: spreadX, y: rowY });
-    });
+    const { coords, width, height } = layoutCluster(rawServices);
 
     const culprit = usingGod && revealSecret ? godState?.secret?.culprit : null;
     const fogPodsMap = new Map<string, typeof fogState.pods>();

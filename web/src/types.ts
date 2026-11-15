@@ -87,10 +87,10 @@ export interface ChangeRecord {
   minute: number;
   service: string;
   kind: string;
-  summary: string;
-  before: Record<string, number>;
-  after: Record<string, number>;
-  callee: string | null;
+  summary?: string;
+  before?: Record<string, number>;
+  after?: Record<string, number>;
+  callee?: string | null;
   author: string;
   reverted: boolean;
   is_root_cause?: boolean;

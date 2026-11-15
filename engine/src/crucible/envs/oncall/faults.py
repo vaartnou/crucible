@@ -36,7 +36,7 @@ def _same_dynamics(world: World, before: State, after: State) -> bool:
     if effective_edges(world, before, before.minute) != effective_edges(world, after, after.minute):
         return False
     for name, parameters in old.items():
-        if parameters["leak_mib_min"] or not parameters["consumer_running"]:
+        if parameters["leak_mib_min"] or parameters["consumer_running"] < 1.0:
             if before.restart_at.get(name) != after.restart_at.get(name):
                 return False
     return True

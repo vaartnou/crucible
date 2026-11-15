@@ -5,7 +5,17 @@ from dataclasses import replace
 import pytest
 
 from crucible.envs.oncall.faults import apply_action
-from crucible.envs.oncall.model import State, advance, effective_edges, effective_parameters, solve
+from crucible.envs.oncall.grader import grade, loss
+from crucible.envs.oncall.model import (
+    SOLVER_FIXED_POINT_ITERATIONS,
+    SOLVER_LINE_SEARCH_ITERATIONS,
+    SOLVER_NEWTON_ITERATIONS,
+    State,
+    advance,
+    effective_edges,
+    effective_parameters,
+    solve,
+)
 from crucible.envs.oncall.world import Edge, Service, World, make_world
 
 
@@ -184,7 +194,76 @@ def test_convergence_across_episode_and_interventions(seed: int) -> None:
         for reverted in (set[str](), {world.change_id}, {c.id for c in world.changes[::2]}):
             _, edges = solve(world, State(reverted_changes=reverted), minute)
             assert all(e.solver_residual < 1e-5 for e in edges)
-            assert all(e.solver_iterations <= 2048 for e in edges)
+            budget = (
+                SOLVER_FIXED_POINT_ITERATIONS
+                + SOLVER_NEWTON_ITERATIONS
+                * (1 + len(world.services) + SOLVER_LINE_SEARCH_ITERATIONS)
+                + 1
+            )
+            assert all(e.solver_iterations <= budget for e in edges)
+
+
+@pytest.mark.parametrize("seed", [5, 942])
+def test_counterfactual_converges_through_full_grading_horizon(seed: int) -> None:
+    world = make_world(seed)
+    assert world.fault in ("retry_storm", "config_push")
+    baseline = State(minute=-31)
+    advance(world, baseline, 181)
+    assert baseline.minute == 150
+    assert all(e.solver_residual < 1e-7 for frame in baseline.edge_history for e in frame)
+    assert sum(loss(frame) for frame in baseline.history if frame[0].minute > 5) > 0
+
+    repaired = State(minute=-31)
+    advance(world, repaired, 47)
+    apply_action(world, repaired, "config", world.culprit, world.change_id)
+    advance(world, repaired, 36)
+    repaired.report = {
+        "service": world.culprit,
+        "fault_kind": world.fault,
+        "change_id": world.change_id,
+        "remediation": "config_revert",
+    }
+    score = grade(world, repaired)
+    assert score.total > 0.85
+    assert score.flags["verified"]
+    assert score.flags["diagnosis_correct"]
+
+
+@pytest.mark.parametrize("salt", [None, "queue-validity-holdout"])
+def test_generated_queue_faults_overload_even_lightly_loaded_workers(salt: str | None) -> None:
+    queue_worlds = [
+        world for seed in range(100) if (world := make_world(seed, salt)).fault == "queue_backlog"
+    ]
+    assert queue_worlds
+    for world in queue_worlds:
+        state = State(minute=-31)
+        advance(world, state, 36)
+        pods = [p for p in state.history[-1] if p.service == world.culprit]
+        assert all(p.state == "Running" for p in pods), world.fingerprint
+        assert sum(p.queue_depth for p in pods) > 0, world.fingerprint
+        assert loss(state.history[-1]) > 0, world.fingerprint
+
+        # A real rollback must drain the existing queue and restore healthy
+        # traffic; merely generating an overloaded worker is insufficient.
+        apply_action(world, state, "undo", world.culprit, world.change_id)
+        advance(world, state, 30)
+        assert loss(state.history[-1]) == 0, world.fingerprint
+        assert all(p.queue_depth == 0 for p in state.history[-1]), world.fingerprint
+
+
+@pytest.mark.parametrize("seed", [116, 554])
+def test_generated_pool_faults_exhaust_lightly_loaded_edges(seed: int) -> None:
+    world = make_world(seed)
+    assert world.fault == "pool_exhaustion"
+    state = State(minute=-31)
+    advance(world, state, 36)
+    assert loss(state.history[-1]) > 0
+    assert any(
+        e.caller == world.culprit and e.pool_rejection_ratio > 0 for e in state.edge_history[-1]
+    )
+    apply_action(world, state, "config", world.culprit, world.change_id)
+    advance(world, state, 30)
+    assert loss(state.history[-1]) == 0
 
 
 def test_repaired_retry_storm_remains_numerically_stable_while_queue_drains() -> None:

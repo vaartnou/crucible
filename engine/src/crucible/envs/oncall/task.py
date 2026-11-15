@@ -248,12 +248,14 @@ the triggering change. Time starts at minute 5; you have 80 calls and until minu
 cost one simulated minute, changes cost three. Invalid calls count against the call budget. Every
 observation comes from the simulated clock, independent of wall time. `observed_at` is the
 sample time before a call; `minute` is the clock after its cost.
-Commands: kubectl get services; kubectl get pods [-n shop]; kubectl get events; changes list;
-edges list [SERVICE]; kubectl rollout history deploy/SERVICE;
+Commands: kubectl get services; kubectl get pods [-n shop]; kubectl get events;
+changes list [SERVICE]; edges list [SERVICE]; kubectl rollout history deploy/SERVICE;
 kubectl rollout undo deploy/SERVICE [--to-revision=CHANGE_ID]; kubectl rollout
 restart deploy/SERVICE; config history SERVICE; config revert SERVICE CHANGE_ID. Config revert
 reverses the named change. Targeted rollout undo reverses the named deployment change;
 without a revision, it reverses the newest deployment change. Other shell commands are unsupported.
+changes list shows cluster-wide change headers; changes list SERVICE, config history SERVICE,
+and kubectl rollout history deploy/SERVICE include before/after values.
 Metrics: error_ratio, p99_latency (seconds), request_rate, memory (MiB), pool_in_use, queue_depth.
 Query one service or '*' and group by service or pod. Service rates, pool use and queue depth
 sum pods; error ratio and memory average pods; latency is the slowest pod. Windows average each
@@ -264,7 +266,6 @@ request and attempt rates, observed latency (seconds), concurrency, pool use, ti
 and retries. request_rate excludes retries; offered_attempt_rate includes retry attempts;
 attempt_rate counts attempts admitted by the pool. pool_rejection_ratio is the rejected fraction.
 Solver residual and iterations report numerical convergence (window maxima).
-Changes include before/after parameter values and the affected callee.
 Logs have 20 lines per page.
 Close with resolve(report={service, fault_kind, change_id, remediation}). Fault kinds:
 partial_rollout, config_push, memory_leak, pool_exhaustion, retry_storm, queue_backlog.

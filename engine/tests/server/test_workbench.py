@@ -4,6 +4,7 @@ import asyncio
 import json
 from collections.abc import AsyncIterator
 from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
@@ -11,7 +12,7 @@ import pytest
 from crucible.core.executor import LocalExecutor
 from crucible.core.jobs import Job
 from crucible.core.tools import ToolCall, ToolResult
-from crucible.core.transcript import TranscriptWriter
+from crucible.core.transcript import TranscriptWriter, read_transcript
 from crucible.envs.oncall.task import OncallTask
 from crucible.feedback.version import environment_hash, simulator_hash
 from crucible.server.app import create_app
@@ -98,6 +99,83 @@ async def test_human_play_fog_of_war_vs_god_view(client: httpx.AsyncClient) -> N
     assert secret is not None
     assert secret["culprit"]
     assert secret["change_id"].startswith("chg-")
+
+
+async def test_scoped_change_details_survive_later_global_headers(
+    client: httpx.AsyncClient,
+) -> None:
+    initial = (await client.post("/ui/sessions", json={"seed": 0})).json()
+    endpoint = f"/ui/sessions/{initial['session_id']}/step"
+
+    async def run(command: str) -> dict[str, Any]:
+        response = await client.post(endpoint, json={"name": "run", "args": {"command": command}})
+        assert response.status_code == 200
+        return response.json()
+
+    headers = await run("changes list")
+    rows = headers["result"]["content"]["data"]
+    assert all("summary" not in row for row in rows)
+    target = rows[0]["service"]
+    scoped = await run(f"changes list {target}")
+    details = {row["id"]: row for row in scoped["session"]["fog_state"]["changes"]}
+    discovered = [row for row in details.values() if row["service"] == target]
+    assert discovered
+    assert all("summary" in row and "before" in row and "after" in row for row in discovered)
+    assert all("summary" not in row for row in details.values() if row["service"] != target)
+    refreshed = await run("changes list")
+    refreshed_details = {row["id"]: row for row in refreshed["session"]["fog_state"]["changes"]}
+    for row in discovered:
+        for key in ("summary", "before", "after"):
+            assert refreshed_details[row["id"]][key] == row[key]
+
+
+async def test_deep_shared_dependencies_all_appear_in_call_paths(client: httpx.AsyncClient) -> None:
+    response = await client.post("/ui/sessions?include_god=true", json={"seed": 0})
+    assert response.status_code == 200
+    god = response.json()["god_state"]
+    assert len(god["services"]) == 23
+    traces = god["traces"]
+    assert len({trace["trace_id"] for trace in traces}) == len(traces)
+    traced_edges = {
+        (span["caller"], span["service"])
+        for trace in traces
+        for span in trace["spans"]
+        if span["caller"] is not None
+    }
+    actual_edges = {(edge["caller"], edge["callee"]) for edge in god["edges"]}
+    assert traced_edges == actual_edges
+    assert max(len(trace["spans"]) for trace in traces) >= 5
+
+
+async def test_replay_scrubbing_cannot_validate_a_divergent_world(
+    client: httpx.AsyncClient, tmp_path: Path
+) -> None:
+    result = (
+        await LocalExecutor().run(
+            [Job(task="oncall@1", policy="reference", seed=1)], tmp_path / "replay"
+        )
+    )[0]
+    path = result.transcript_path
+    valid = await client.get("/ui/runs/replay", params={"path": str(path), "up_to_step": 0})
+    assert valid.status_code == 200
+    assert valid.json()["has_matched_world"]
+
+    transcript = read_transcript(path)
+    records = [
+        rec.model_dump(mode="json")
+        for rec in (transcript.header, *transcript.steps, transcript.footer)
+    ]
+    records[1]["result"]["content"]["data"][0]["name"] = "obsolete-service"
+    path.write_text("\n".join(json.dumps(rec) for rec in records) + "\n")
+    for selected_step in (0, 1):
+        response = await client.get(
+            "/ui/runs/replay", params={"path": str(path), "up_to_step": selected_step}
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["salt_status"] == "diverged_simulator"
+        assert payload["has_matched_world"] is False
+        assert payload["god_state"] is None
 
 
 async def test_live_policy_session_completes_and_grades(tmp_path: Path) -> None:

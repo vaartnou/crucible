@@ -136,20 +136,61 @@ def _error_onset(history: list[tuple[PodSample, ...]], service: str) -> int:
     return onset
 
 
+def _latency_onset(
+    history: list[tuple[PodSample, ...]], service: str, threshold: float = 0.85
+) -> int:
+    """Start of the current contiguous latency episode, using recorded samples only."""
+    onset = history[-1][0].minute
+    for frame in reversed(history):
+        values = [row.p99_latency for row in frame if row.service == service]
+        if not values or max(values) <= threshold:
+            break
+        onset = frame[0].minute
+    return onset
+
+
 def alerts(history: list[tuple[PodSample, ...]]) -> list[dict[str, JsonValue]]:
-    rows = metrics(history, "error_ratio", "*", "service", 5)
+    err_rows = {
+        str(r["name"]): float(r["value"])
+        for r in metrics(history, "error_ratio", "*", "service", 5)
+        if isinstance(r["value"], (int, float))
+    }
+    lat_rows = {
+        str(r["name"]): float(r["value"])
+        for r in metrics(history, "p99_latency", "*", "service", 5)
+        if isinstance(r["value"], (int, float))
+    }
+    mem_rows = {
+        str(r["name"]): float(r["value"])
+        for r in metrics(history, "memory", "*", "service", 5)
+        if isinstance(r["value"], (int, float))
+    }
     result: list[dict[str, JsonValue]] = []
-    for row in rows:
-        value = row["value"]
-        if isinstance(value, float) and value > 0.05:
-            name = str(row["name"])
+    for name, err in err_rows.items():
+        if err > 0.05:
+            severity = (
+                3
+                if name == "edge-gateway" or (lat_rows.get(name, 0.0) > 0.45 and err > 0.15)
+                else 2
+            )
             result.append(
                 {
                     "id": f"errors-{name}",
                     "service": name,
-                    "severity": 3 if name == "edge-gateway" else 2,
-                    "error_ratio": value,
+                    "severity": severity,
+                    "error_ratio": err,
                     "started_at": _error_onset(history, name),
+                }
+            )
+    for name, lat in lat_rows.items():
+        if lat > 0.85:
+            result.append(
+                {
+                    "id": f"slo-latency-{name}",
+                    "service": name,
+                    "severity": 3 if name == "edge-gateway" else 2,
+                    "error_ratio": err_rows.get(name, 0.0),
+                    "started_at": _latency_onset(history, name, 0.85),
                 }
             )
     result.append(
@@ -161,6 +202,24 @@ def alerts(history: list[tuple[PodSample, ...]]) -> list[dict[str, JsonValue]]:
             "started_at": -90,
         }
     )
+    healthy_services = sorted(
+        [
+            s
+            for s, err in err_rows.items()
+            if err <= 0.01 and s not in ("edge-gateway", "session-cache")
+        ],
+        key=lambda s: (-mem_rows.get(s, 0.0), s),
+    )
+    for s in healthy_services[:2]:
+        result.append(
+            {
+                "id": f"mem-headroom-{s}",
+                "service": s,
+                "severity": 1,
+                "error_ratio": 0.0,
+                "started_at": -45,
+            }
+        )
     return sorted(
         result, key=lambda r: (-int(str(r["severity"])), int(str(r["started_at"])), str(r["id"]))
     )

@@ -10,6 +10,31 @@ from dataclasses import dataclass, field, replace
 
 from crucible.envs.oncall.world import Edge, World
 
+SOLVER_FIXED_POINT_ITERATIONS = 2048
+SOLVER_NEWTON_ITERATIONS = 64
+SOLVER_LINE_SEARCH_ITERATIONS = 24
+
+
+def _linear_solve(matrix: list[list[float]], rhs: list[float]) -> list[float] | None:
+    """Solve a small dense system with partial pivoting, without an array dependency."""
+    rows = [[*row, value] for row, value in zip(matrix, rhs, strict=True)]
+    size = len(rows)
+    for column in range(size):
+        pivot = max(range(column, size), key=lambda row: abs(rows[row][column]))
+        if abs(rows[pivot][column]) < 1e-12:
+            return None
+        rows[column], rows[pivot] = rows[pivot], rows[column]
+        for row in range(column + 1, size):
+            factor = rows[row][column] / rows[column][column]
+            for index in range(column + 1, size + 1):
+                rows[row][index] -= factor * rows[column][index]
+    solution = [0.0] * size
+    for row in range(size - 1, -1, -1):
+        solution[row] = (
+            rows[row][size] - sum(rows[row][col] * solution[col] for col in range(row + 1, size))
+        ) / rows[row][row]
+    return solution
+
 
 @dataclass(frozen=True)
 class PodSample:
@@ -132,12 +157,19 @@ def solve(
     outgoing: dict[str, list[Edge]] = {s.name: [] for s in world.services}
     for edge in edges:
         outgoing[edge.caller].append(edge)
-    entry = world.entry_rate * (1 + 0.04 * math.sin(minute / 20))
-    rates = {s.name: entry for s in world.services}
+    if minute < 0:
+        demand_scale = 0.55 + 0.45 * math.exp(-((minute / 11.0) ** 2))
+    else:
+        demand_scale = 1.0 + 0.03 * math.sin(minute / 18.0)
+    entry = world.entry_rate * demand_scale
+    rates = {s.name: 0.0 for s in world.services}
     rates["edge-gateway"] = entry
+    for service in reversed(world.services):
+        for edge in outgoing[service.name]:
+            rates[edge.callee] += rates[service.name] * edge.rate_multiplier
     health: dict[str, tuple[float, float]] = {s.name: (0.0, 0.05) for s in world.services}
     edge_rows: dict[tuple[str, str], EdgeSample] = {}
-    own: dict[str, tuple[float, float, float, float, str, str]] = {}
+    own: dict[str, tuple[float, float, float, float, float, str, str]] = {}
     previous = next(
         (frame for frame in reversed(state.history) if frame and frame[0].minute <= minute), ()
     )
@@ -148,9 +180,17 @@ def solve(
 
     # Correlated failures persist across retries (timeouts and capacity saturation are not
     # independent Bernoulli failures). Retry traffic nevertheless consumes callee capacity.
-    delta = float("inf")
-    _iteration = 0
-    for _iteration in range(2048):
+    def evaluate(
+        candidate: dict[str, float],
+    ) -> tuple[
+        dict[str, float],
+        dict[str, tuple[float, float]],
+        dict[str, tuple[float, float, float, float, float, str, str]],
+        dict[tuple[str, str], EdgeSample],
+    ]:
+        rates = candidate
+        own: dict[str, tuple[float, float, float, float, float, str, str]] = {}
+        edge_rows: dict[tuple[str, str], EdgeSample] = {}
         next_health: dict[str, tuple[float, float]] = {}
         for service in world.services:
             p = params[service.name]
@@ -160,12 +200,18 @@ def solve(
             latency = min(10.0, p["base_latency"] / max(0.01, 1 - utilisation))
             error = max(0.0, 1 - capacity / max(rate, 1.0))
             status, message = "Running", "request completed"
-            memory, backlog = 150.0, max(0.0, rate - capacity) * 60
+            base_memory = 150.0 + float(
+                (int(service.capacity * 10) + int(service.base_latency * 1000)) % 180
+            )
+            memory, backlog = base_memory, max(0.0, rate - capacity) * 60
+            canary_memory = base_memory
+            leaking_pods = 0
             if p["bad_pods"]:
                 error = 1 - (1 - error) * (1 - p["pod_error"] * p["bad_pods"] / service.replicas)
-                message = "handler exception in deployed build"
+                message = "rpc handler returned status 500: internal execution failure"
             leak = p["leak_mib_min"]
-            if leak:
+            if leak > 0:
+                leaking_pods = int(p["bad_pods"]) if p["bad_pods"] > 0 else service.replicas
                 deployed = max(
                     (
                         c.minute
@@ -178,21 +224,34 @@ def solve(
                     default=minute,
                 )
                 age = minute - state.restart_at.get(service.name, deployed)
-                memory = min(1024.0, 150 + max(0, age) * leak)
-                if memory >= 1024:
+                canary_memory = min(1024.0, base_memory + max(0, age) * leak)
+                memory = canary_memory
+                if canary_memory >= 1024.0:
+                    oom_service_error = 0.5 * leaking_pods / service.replicas
+                    error = 1 - (1 - error) * (1 - oom_service_error)
+                    message = "container terminated: resident memory limit exceeded"
+                    if leaking_pods >= service.replicas:
+                        status = "OOMKilled"
+            throttled = p["consumer_running"] < 1.0 and service.name not in state.restart_at
+            processing_cap = capacity
+            if throttled:
+                if p["consumer_running"] <= 0.0:
+                    processing_cap = 0.0
                     error, status, message = (
-                        max(error, 0.5),
-                        "OOMKilled",
-                        "memory limit exceeded; restarting container",
+                        max(error, 0.4),
+                        "CrashLoopBackOff",
+                        "worker poll loop exited unexpectedly",
                     )
-            if not p["consumer_running"] and service.name not in state.restart_at:
-                error, status, message = (
-                    max(error, 0.4),
-                    "CrashLoopBackOff",
-                    "consumer process exited with code 1",
-                )
+                else:
+                    processing_cap = max(1.0, capacity * p["consumer_running"])
+                    utilisation = rate / processing_cap
+                    latency = min(10.0, p["base_latency"] / max(0.01, 1 - utilisation))
+                    error = max(error, max(0.0, 1 - processing_cap / max(rate, 1.0)))
+                    status = "Running"
+                    if error > 0.01:
+                        message = "worker dispatch latency elevated; batch commit slow"
             if service.kind == "worker":
-                processing = 0.0 if status == "CrashLoopBackOff" else capacity
+                processing = 0.0 if status == "CrashLoopBackOff" else processing_cap
                 backlog = max(
                     0.0, previous_queue[service.name] + (rate - processing) * elapsed * 60
                 )
@@ -210,7 +269,15 @@ def solve(
                     4.0,
                     "cold cache; backing store overloaded",
                 )
-            own[service.name] = (error, latency, memory, backlog, status, message)
+            own[service.name] = (
+                error,
+                latency,
+                memory,
+                backlog,
+                processing_cap,
+                status,
+                message,
+            )
             for edge in outgoing[service.name]:
                 callee_error, callee_latency = next_health[edge.callee]
                 timeout = max(0.001, edge.timeout_ms / 1000)
@@ -246,63 +313,136 @@ def solve(
         next_rates["edge-gateway"] = entry
         for row in edge_rows.values():
             next_rates[row.callee] += row.attempt_rate
+        return next_rates, next_health, own, edge_rows
+
+    delta = float("inf")
+    _iteration = 0
+    for _iteration in range(SOLVER_FIXED_POINT_ITERATIONS):
+        next_rates, health, own, edge_rows = evaluate(rates)
         delta = max(abs(next_rates[name] - rates[name]) for name in rates)
-        damping = 0.35 if _iteration < 80 else 0.05
-        rates = {name: (1 - damping) * rates[name] + damping * next_rates[name] for name in rates}
-        health = next_health
         if delta < 1e-7:
             break
+        damping = 0.65 if _iteration < 500 else (0.25 if _iteration < 1200 else 0.05)
+        rates = {name: (1 - damping) * rates[name] + damping * next_rates[name] for name in rates}
+    if delta >= 1e-7:
+        # Picard iteration can oscillate around a steep timeout/pool transition.
+        # Solve the same traffic-balance equations with a damped Newton fallback.
+        names = list(rates)
+        for _ in range(SOLVER_NEWTON_ITERATIONS):
+            next_rates, health, own, edge_rows = evaluate(rates)
+            _iteration += 1
+            residual = [next_rates[name] - rates[name] for name in names]
+            delta = max(abs(value) for value in residual)
+            if delta < 1e-7:
+                break
+            jacobian = [[0.0] * len(names) for _ in names]
+            for column, name in enumerate(names):
+                shifted = dict(rates)
+                step = 1e-5 * max(1.0, abs(rates[name]))
+                shifted[name] += step
+                shifted_next, _, _, _ = evaluate(shifted)
+                _iteration += 1
+                for row, other in enumerate(names):
+                    jacobian[row][column] = (
+                        shifted_next[other] - shifted[other] - residual[row]
+                    ) / step
+            direction = _linear_solve(jacobian, [-value for value in residual])
+            if direction is None:
+                break
+            fraction = 1.0
+            for _ in range(SOLVER_LINE_SEARCH_ITERATIONS):
+                candidate = {
+                    name: max(0.0, rates[name] + fraction * direction[i])
+                    for i, name in enumerate(names)
+                }
+                candidate_next, _, _, _ = evaluate(candidate)
+                _iteration += 1
+                candidate_delta = max(abs(candidate_next[name] - candidate[name]) for name in names)
+                if candidate_delta < delta:
+                    rates = candidate
+                    break
+                fraction *= 0.5
+            else:
+                break
+        next_rates, health, own, edge_rows = evaluate(rates)
+        _iteration += 1
+        delta = max(abs(next_rates[name] - rates[name]) for name in rates)
     if delta >= 1e-5:
         raise ValueError(f"Fluid network did not converge: residual={delta:g}")
     output: list[PodSample] = []
     for service in world.services:
         p = params[service.name]
-        own_error, _, memory, backlog, status, own_message = own[service.name]
+        base_memory = 150.0 + float(
+            (int(service.capacity * 10) + int(service.base_latency * 1000)) % 180
+        )
+        (
+            own_error,
+            _,
+            canary_memory,
+            backlog,
+            effective_cap,
+            status,
+            own_message,
+        ) = own[service.name]
         error, latency = health[service.name]
         service_edges = [edge_rows[(e.caller, e.callee)] for e in outgoing[service.name]]
         pool = max((e.pool_in_use for e in service_edges), default=0.0)
         worst = max(service_edges, key=lambda e: e.error_ratio, default=None)
         for index in range(service.replicas):
-            message, pod_error = own_message, error
-            if p["bad_pods"]:
-                bad = index >= service.replicas - int(p["bad_pods"])
-                downstream = 1 - (1 - error) / max(1e-9, 1 - own_error)
-                saturation = max(
-                    0.0, 1 - p["capacity"] * service.replicas / max(rates[service.name], 1.0)
-                )
-                pod_error = 1 - (1 - saturation) * (1 - (p["pod_error"] if bad else 0.0)) * (
-                    1 - downstream
-                )
-                message = "handler exception in deployed build" if bad else "request completed"
-            if message == "request completed" and worst is not None and worst.error_ratio > 0.01:
-                if worst.concurrency > worst.pool_size + 0.01:
+            is_canary = int(p["bad_pods"]) > 0 and index >= service.replicas - int(p["bad_pods"])
+            is_leaking_pod = (p["leak_mib_min"] > 0) and (
+                is_canary if int(p["bad_pods"]) > 0 else True
+            )
+            pod_mem = canary_memory if is_leaking_pod else base_memory
+            pod_status = status
+            local_fault = 0.0
+            message = "request completed"
+            if status == "CrashLoopBackOff":
+                local_fault = 0.4
+                message = own_message
+            if int(p["bad_pods"]) > 0 and p["pod_error"] > 0 and is_canary:
+                local_fault = max(local_fault, p["pod_error"])
+                message = "rpc handler returned status 500: internal execution failure"
+            if is_leaking_pod and canary_memory >= 1024.0:
+                local_fault = max(local_fault, 0.5)
+                pod_status = "OOMKilled"
+                message = "container terminated: resident memory limit exceeded"
+            if (
+                service.kind == "cache"
+                and state.stampede_until >= 0
+                and minute < state.stampede_until
+            ):
+                local_fault = max(local_fault, 0.8)
+                message = "cold cache; backing store overloaded"
+            downstream = 1 - (1 - error) / max(1e-9, 1 - own_error)
+            saturation = max(0.0, 1 - effective_cap / max(rates[service.name], 1.0))
+            pod_error = 1 - ((1 - saturation) * (1 - local_fault) * (1 - downstream))
+            if message == "request completed":
+                if worst is not None and worst.error_ratio > 0.01:
                     message = (
-                        f"pool exhausted calling {worst.callee}: "
-                        f"{worst.pool_in_use:.1f}/{worst.pool_size:g} active"
+                        f"rpc call to {worst.callee} failed: upstream deadline or transport error"
                     )
-                elif worst.latency * 1000 > worst.timeout_ms:
+                elif saturation > 0.01:
                     message = (
-                        f"upstream timeout after {worst.timeout_ms:g}ms "
-                        f"calling {worst.callee}; retries={worst.retries:g}"
+                        own_message
+                        if own_message != "request completed"
+                        else "request handling degraded; local worker contention"
                     )
-                else:
-                    message = f"upstream request failed calling {worst.callee}"
-            elif message == "request completed" and own_error > 0.01:
-                message = "service capacity saturated; request queue growing"
             version = p["version"]
-            if p["bad_pods"] and index < service.replicas - int(p["bad_pods"]):
-                version -= 1
+            if int(p["bad_pods"]) > 0 and p["pod_error"] > 0:
+                if not is_canary:
+                    version -= 1
             output.append(
                 PodSample(
                     minute,
                     service.name,
                     f"{service.name}-7f9c4-p{index}",
                     f"v{version:g}",
-                    status,
+                    pod_status,
                     rates[service.name] / service.replicas,
                     min(1.0, max(0.0, pod_error)),
                     latency,
-                    memory,
+                    pod_mem,
                     pool / service.replicas,
                     backlog / service.replicas,
                     message,

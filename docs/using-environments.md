@@ -48,6 +48,7 @@ From the repository root, build the UI once and start the server:
 ```sh
 cd web
 npm ci
+npm test
 npm run build
 cd ..
 uv run --directory engine crucible ui --jobs-dir ../runs/harbor-jobs --exports-dir ../runs

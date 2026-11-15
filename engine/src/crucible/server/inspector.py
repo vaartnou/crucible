@@ -154,7 +154,7 @@ def build_fog_state(steps: Sequence[StepRecord]) -> dict[str, Any]:
                             ensure_service(callee)
                             edges[(caller, callee)] = {**item, "observed_at": observed_at}
             elif (
-                words == ["changes", "list"]
+                words[:2] == ["changes", "list"]
                 or words[:2] == ["config", "history"]
                 or words[:3] == ["kubectl", "rollout", "history"]
             ) and isinstance(data, list):
@@ -163,7 +163,9 @@ def build_fog_state(steps: Sequence[StepRecord]) -> dict[str, Any]:
                     if item is not None and isinstance(item.get("id"), str):
                         cid = str(item["id"])
                         ensure_service(str(item.get("service", "")))
-                        changes[cid] = {**item, "observed_at": observed_at}
+                        # Global headers must not erase details already discovered
+                        # through a scoped history query.
+                        changes[cid] = {**changes.get(cid, {}), **item, "observed_at": observed_at}
             else:
                 msg_data = _as_dict(data)
                 if msg_data is not None and "message" in msg_data:
@@ -314,19 +316,23 @@ def _build_traces(
     if gateway is None:
         return []
 
-    traces: list[dict[str, Any]] = []
-    for idx, top_callee in enumerate(gateway.dependencies):
-        chain: list[tuple[str | None, str]] = [(None, "edge-gateway")]
-        caller = "edge-gateway"
-        curr: str | None = top_callee
-        visited = {"edge-gateway"}
-        while curr is not None and curr not in visited and curr in svc_map:
-            visited.add(curr)
-            chain.append((caller, curr))
-            deps = svc_map[curr].dependencies
-            caller = curr
-            curr = deps[0] if deps else None
+    chains: list[list[tuple[str | None, str]]] = []
+    pending: list[list[tuple[str | None, str]]] = [[(None, gateway.name)]]
+    while pending:
+        chain = pending.pop()
+        caller = chain[-1][1]
+        visited = {name for _, name in chain}
+        dependencies = [
+            dep for dep in svc_map[caller].dependencies if dep in svc_map and dep not in visited
+        ]
+        if not dependencies:
+            chains.append(chain)
+        else:
+            pending.extend([*chain, (caller, dep)] for dep in reversed(dependencies))
 
+    traces: list[dict[str, Any]] = []
+    for idx, chain in enumerate(chains):
+        top_callee = chain[1][1] if len(chain) > 1 else gateway.name
         branch_label = top_callee.split("-")[0] if "-" in top_callee else top_callee
         spans: list[dict[str, Any]] = []
         cursor_ms = 0.0
@@ -426,8 +432,8 @@ def _build_traces(
         )
         traces.append(
             {
-                "trace_id": f"tr-m{selected_minute}-{branch_label}",
-                "branch": branch_label,
+                "trace_id": f"tr-m{selected_minute}-{branch_label}-{idx}",
+                "branch": f"{branch_label} / {chain[-1][1]}",
                 "minute": selected_minute,
                 "root_service": "edge-gateway",
                 "leaf_service": chain[-1][1],

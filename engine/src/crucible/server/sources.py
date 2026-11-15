@@ -409,28 +409,38 @@ async def replay_parsed_transcript(
     salt_status = "missing_salt" if parsed.header.salted and not salt_candidates else "unverified"
     matched_salt_value: str | None = None
 
+    # A scrub position is not evidence of world identity. In particular, an
+    # empty prefix matches every salt and every simulator. Validate all recorded
+    # observations before showing a reconstructed cluster at the selected step.
+    if not parsed.steps:
+        salt_status = "insufficient_evidence"
+        salt_candidates = []
     for source_label, candidate_salt in salt_candidates:
         task = get_task(parsed.header.task)
         diverged = False
         try:
             await task.reset(parsed.header.seed, salt=candidate_salt)
-            for rec in sliced_steps:
+            for rec in parsed.steps:
                 if task.done():
+                    diverged = True
                     break
                 res = await task.step(rec.call)
                 if res != rec.result:
                     diverged = True
-            god = build_god_state(task, inspect_minute=inspect_minute, reveal_secret=reveal_secret)
+                    break
+            if not diverged:
+                await task.reset(parsed.header.seed, salt=candidate_salt)
+                for rec in sliced_steps:
+                    await task.step(rec.call)
+                matched_god = build_god_state(
+                    task, inspect_minute=inspect_minute, reveal_secret=reveal_secret
+                )
+                salt_status = f"matched ({source_label})"
+                matched_salt_value = candidate_salt
+                break
+            salt_status = "diverged_simulator"
         finally:
             await task.aclose()
-        if not diverged:
-            matched_god = god
-            salt_status = f"matched ({source_label})"
-            matched_salt_value = candidate_salt
-            break
-        if matched_god is None and not parsed.header.salted:
-            matched_god = god
-            salt_status = "diverged_simulator"
 
     return {
         "path": parsed.path,

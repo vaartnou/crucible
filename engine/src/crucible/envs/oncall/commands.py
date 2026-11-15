@@ -35,7 +35,23 @@ def run(world: World, state: State, command: str) -> tuple[JsonValue, int]:
             if len(words) == 2 or edge.caller == words[2]
         ], 1
     if words == ["changes", "list"]:
-        return [asdict(c) for c in world.changes if c.minute <= state.minute], 1
+        return [
+            {
+                "id": c.id,
+                "minute": c.minute,
+                "service": c.service,
+                "kind": c.kind,
+                "author": c.author,
+            }
+            for c in world.changes
+            if c.minute <= state.minute
+        ], 1
+    if len(words) == 3 and words[:2] == ["changes", "list"]:
+        if words[2] not in names:
+            raise ValueError("unknown service")
+        return [
+            asdict(c) for c in world.changes if c.service == words[2] and c.minute <= state.minute
+        ], 1
     if len(words) == 3 and words[:2] == ["config", "history"] and words[2] in names:
         return [
             asdict(c)

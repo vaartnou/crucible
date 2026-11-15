@@ -590,7 +590,7 @@ export const McpConsole: React.FC<McpConsoleProps> = ({
                       <option
                         key={c.id}
                         value={c.id}
-                        label={`${c.service} m=${c.minute} (${c.summary})`}
+                        label={`${c.service} m=${c.minute} (${c.summary ?? 'diff not discovered'})`}
                       />
                     ))}
                   </datalist>

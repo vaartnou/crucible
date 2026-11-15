@@ -1,3 +1,4 @@
+import { edgePaths } from '../edgePaths';
 import React, { useMemo, useState } from 'react';
 import { Activity, AlertTriangle, Cpu, GitCommit, Layers, Workflow } from 'lucide-react';
 import type {
@@ -44,22 +45,12 @@ export const InspectorTabs: React.FC<InspectorTabsProps> = ({
   const traces: CallPathTrace[] = useMemo(() => {
     if (usingGod && godState) return godState.traces;
     if (fogState.edges.length === 0) return [];
-    const byCaller = new Map<string, typeof fogState.edges>();
-    for (const e of fogState.edges) {
-      const list = byCaller.get(e.caller) ?? [];
-      list.push(e);
-      byCaller.set(e.caller, list);
-    }
-    const roots = byCaller.get('edge-gateway') ?? fogState.edges.slice(0, 6);
-    return roots.map((topEdge, idx) => {
+    return edgePaths(fogState.edges).map((path, idx) => {
+      const topEdge = path[0];
       const spans: CallPathTrace['spans'] = [];
-      let currEdge: (typeof fogState.edges)[number] | undefined = topEdge;
-      let depth = 0;
       let cursor = 0;
       let maxErr = 0;
-      const visited = new Set<string>();
-      while (currEdge && !visited.has(currEdge.callee)) {
-        visited.add(currEdge.callee);
+      for (const [depth, currEdge] of path.entries()) {
         const durMs = currEdge.latency * 1000;
         const tags: string[] = [];
         if (durMs > currEdge.timeout_ms) tags.push('TIMEOUT');
@@ -94,13 +85,10 @@ export const InspectorTabs: React.FC<InspectorTabsProps> = ({
           tags,
         });
         cursor += 12;
-        depth += 1;
-        const nextList = byCaller.get(currEdge.callee);
-        currEdge = nextList?.[0];
       }
       const branch = topEdge.callee.split('-')[0] ?? topEdge.callee;
       return {
-        trace_id: `fog-tr-${branch}`,
+        trace_id: `fog-tr-${branch}-${idx}`,
         branch,
         minute: fogState.current_minute,
         root_service: topEdge.caller,
@@ -121,7 +109,7 @@ export const InspectorTabs: React.FC<InspectorTabsProps> = ({
       if (matchSvc) return matchSvc;
     }
     if (selectedBranch) {
-      const found = traces.find((t) => t.branch === selectedBranch);
+      const found = traces.find((t) => t.trace_id === selectedBranch);
       if (found) return found;
     }
     return traces[0];
@@ -294,13 +282,15 @@ const TracesPanel: React.FC<{
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+        <div role="group" aria-label="Call path choices" style={{ display: 'flex', gap: 5, flexWrap: 'wrap', maxHeight: 76, overflowY: 'auto', width: '100%' }}>
           {traces.map((t) => {
             const active = activeTrace?.trace_id === t.trace_id;
             return (
               <button
                 key={t.trace_id}
                 className="btn"
+                aria-pressed={active}
+                title={t.spans.map(span => span.service).join(' → ')}
                 style={{
                   borderColor: active
                     ? 'var(--cyan)'
@@ -310,7 +300,7 @@ const TracesPanel: React.FC<{
                   background: active ? 'rgba(56,189,248,0.16)' : undefined,
                   padding: '4px 8px',
                 }}
-                onClick={() => onSelectBranch(t.branch)}
+                onClick={() => onSelectBranch(t.trace_id)}
               >
                 <span
                   style={{
@@ -1051,7 +1041,7 @@ const ChangesAndAlertsPanel: React.FC<{
                     </span>
                   </td>
                   <td>
-                    {c.summary}
+                    {c.summary ?? 'Inspect service history to discover the diff.'}
                     {c.reverted && (
                       <span className="badge badge-ok" style={{ marginLeft: 6 }}>
                         REVERTED

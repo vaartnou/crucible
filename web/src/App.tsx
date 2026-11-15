@@ -641,7 +641,15 @@ export const App: React.FC = () => {
               }}
               style={{ width: 140, accentColor: 'var(--cyan)' }}
             />
-            <span className="badge badge-info">{replayData.salt_status}</span>
+            <span className="badge badge-info" title={replayData.has_matched_world
+              ? 'Recorded observations match this simulation.'
+              : 'Full-cluster reconstruction is unavailable. Showing recorded agent observations.'}>
+              {replayData.salt_status.startsWith('matched') ? 'World verified'
+                : replayData.salt_status === 'diverged_simulator' ? 'Recording uses a different simulation'
+                : replayData.salt_status === 'missing_salt' ? 'Original export needed'
+                : replayData.salt_status === 'insufficient_evidence' ? 'Not enough recorded evidence'
+                : 'World not verified'}
+            </span>
           </div>
         )}
       </div>}

@@ -71,6 +71,9 @@ class GraphWalk(Base):
         self.retry_owner = False
         self.backtrace_change: dict[str, JsonValue] | None = None
         self.backtrace_leaf = ""
+        self.pod_memories: list[float] = []
+        self.target_queue: float = 0.0
+        self.pending_services: list[str] = []
 
     def _choose_target(self) -> None:
         unhealthy = {
@@ -102,23 +105,28 @@ class GraphWalk(Base):
             onset = self.onsets.get(caller)
             if onset is None or onset > self.onsets.get(callee, onset):
                 continue
-            matching = [
-                c
-                for c in self.changes
-                if c.get("service") == caller
-                and c.get("callee") == callee
-                and str(c.get("id")) not in self.attempted
-                and onset - 1 <= _number(c, "minute") <= onset
-            ]
+            matching = sorted(
+                [
+                    c
+                    for c in self.changes
+                    if c.get("service") == caller
+                    and c.get("callee") == callee
+                    and str(c.get("id")) not in self.attempted
+                    and _number(c, "minute") <= onset
+                ],
+                key=lambda c: _number(c, "minute"),
+                reverse=True,
+            )
             for change in matching:
                 retry_before = _parameter(change, "before", "retries")
                 retry_after = _parameter(change, "after", "retries")
                 timeout_before = _parameter(change, "before", "timeout_ms")
                 timeout_after = _parameter(change, "after", "timeout_ms")
-                retry_increase = (
+                immediate_retry = (
                     retry_before is not None
                     and retry_after is not None
                     and retry_after > retry_before
+                    and (onset - 1 <= _number(change, "minute") <= onset or retry_after >= 3)
                 )
                 timeout_crossed = (
                     timeout_before is not None
@@ -126,52 +134,68 @@ class GraphWalk(Base):
                     and timeout_after < timeout_before
                     and timeout_after < _number(edge, "latency") * 1000
                 )
-                if retry_increase or timeout_crossed:
+                if immediate_retry or timeout_crossed:
                     self.target = caller
-                    self.retry_owner = retry_increase
+                    self.retry_owner = immediate_retry
                     self.backtrace_change = change
                     return
 
     def _diagnose(self) -> str:
-        if "memory limit" in self.messages or "OOM" in self.messages:
-            return "memory_leak"
-        if "consumer" in self.messages and (
-            "exited" in self.messages or "stopped" in self.messages
+        if (
+            "memory" in self.messages
+            or "OOM" in self.messages
+            or (self.pod_memories and max(self.pod_memories) >= 950)
         ):
-            return "queue_backlog"
-        if "handler exception" in self.messages or (
-            self.pod_errors and min(self.pod_errors) < 0.01 < max(self.pod_errors)
+            return "memory_leak"
+        if (
+            "handler exception" in self.messages
+            or "status 500" in self.messages
+            or (self.pod_errors and min(self.pod_errors) < 0.01 < max(self.pod_errors))
         ):
             return "partial_rollout"
         owned = [e for e in self.edges if e.get("caller") == self.target]
+        failing_edges = [e for e in owned if _number(e, "error_ratio") > 0.01]
+        if not failing_edges and (
+            self.target_queue > 0
+            or ("consumer" in self.messages)
+            or ("dispatch latency" in self.messages)
+            or ("poll loop" in self.messages)
+        ):
+            return "queue_backlog"
         retry_changes = [
             change
             for change in self.changes
             if change.get("service") == self.target
-            and self.onsets.get(self.target, 5) - 1
-            <= _number(change, "minute")
-            <= self.onsets.get(self.target, 5)
-            and _parameter(change, "after", "retries") is not None
+            and _number(change, "minute") <= self.onsets.get(self.target, 5)
             and (_parameter(change, "after", "retries") or 0)
             > (_parameter(change, "before", "retries") or 0)
+            and (
+                self.onsets.get(self.target, 5) - 1
+                <= _number(change, "minute")
+                <= self.onsets.get(self.target, 5)
+                or (_parameter(change, "after", "retries") or 0) >= 3
+            )
         ]
         if self.retry_owner or (
             retry_changes
             and any(
                 _number(e, "offered_attempt_rate") > 1.5 * _number(e, "request_rate")
-                and _number(e, "error_ratio") > 0.01
-                for e in owned
+                for e in failing_edges
             )
         ):
             return "retry_storm"
         if "pool exhausted" in self.messages or any(
-            _number(e, "concurrency") > _number(e, "pool_size") for e in owned
+            _number(e, "pool_rejection_ratio") > 0.01
+            or _number(e, "concurrency") > _number(e, "pool_size")
+            for e in failing_edges
         ):
             return "pool_exhaustion"
         if "timeout" in self.messages or any(
-            _number(e, "latency") * 1000 > _number(e, "timeout_ms") for e in owned
+            _number(e, "latency") * 1000 > _number(e, "timeout_ms") for e in failing_edges
         ):
             return "config_push"
+        if self.target_queue > 0:
+            return "queue_backlog"
         return ""
 
     def _repair(self) -> ToolCall:
@@ -185,6 +209,23 @@ class GraphWalk(Base):
             and str(c.get("id")) not in self.attempted
         ]
         if config:
+            bad_edges = [
+                e
+                for e in self.edges
+                if e.get("caller") == self.target and _number(e, "error_ratio") > 0.01
+            ]
+            bad_edge: dict[str, JsonValue] | None = (
+                max(bad_edges, key=lambda e: _number(e, "error_ratio")) if bad_edges else None
+            )
+            if bad_edge is not None:
+                edge_cands = [c for c in candidates if c.get("callee") == bad_edge.get("callee")]
+                if edge_cands:
+                    candidates = edge_cands
+            primary_key = {
+                "config_push": "timeout_ms",
+                "pool_exhaustion": "pool_size",
+                "retry_storm": "retries",
+            }[self.fault]
             keys = {
                 "config_push": ("timeout_ms",),
                 "pool_exhaustion": ("pool_size", "rate_multiplier"),
@@ -206,6 +247,15 @@ class GraphWalk(Base):
                     ):
                         relevant.append(change)
                         break
+            if bad_edge is not None and primary_key and relevant:
+                active_val = _number(bad_edge, primary_key)
+                active_matching = [
+                    c
+                    for c in relevant
+                    if abs((_parameter(c, "after", primary_key) or -999) - active_val) < 1e-3
+                ]
+                if active_matching:
+                    relevant = active_matching
             candidates = relevant
         # Prefer a change at or before the observed onset; never blindly undo the newest decoy.
         prior = [c for c in candidates if _number(c, "minute") <= self.onset]
@@ -259,7 +309,46 @@ class GraphWalk(Base):
                 if _number(row, "value") > 0.01:
                     name, minute = str(row["name"]), _number(row, "minute")
                     self.onsets[name] = min(self.onsets.get(name, minute), minute)
-            return _run("changes list")
+            unhealthy = {
+                name
+                for name in self.health
+                if self.health[name] > 0.01 or self.latencies.get(name, 0) > 2
+            }
+            leaves: list[str] = []
+            for service in self.services:
+                dependencies = service.get("dependencies")
+                if (
+                    str(service["name"]) in unhealthy
+                    and isinstance(dependencies, list)
+                    and not any(str(dep) in unhealthy for dep in dependencies)
+                ):
+                    leaves.append(str(service["name"]))
+            callers = [
+                str(edge["caller"])
+                for edge in self.edges
+                if str(edge.get("callee")) in leaves
+                and _number(edge, "error_ratio") > 0.01
+                and _number(edge, "offered_attempt_rate") > 1.5 * _number(edge, "request_rate")
+            ]
+            self.pending_services = list(dict.fromkeys([*leaves, *callers]))
+            self.changes = []
+            if self.pending_services:
+                self.stage = 20
+                svc = self.pending_services.pop(0)
+                return _run(f"changes list {svc}")
+            return ToolCall(name="resolve", args={"report": self.report})
+        if stage == 20:
+            self.changes.extend(rows)
+            if self.pending_services:
+                self.stage = 20
+                svc = self.pending_services.pop(0)
+                return _run(f"changes list {svc}")
+            self._choose_target()
+            if not self.target:
+                return ToolCall(name="resolve", args={"report": self.report})
+            self.onset = self.onsets.get(self.target, 5)
+            self.stage = 7
+            return _metrics(self.target, "pod")
         if stage == 6:
             self.changes = rows
             self._choose_target()
@@ -269,6 +358,21 @@ class GraphWalk(Base):
             return _metrics(self.target, "pod")
         if stage == 7:
             self.pod_errors = [_number(row, "value") for row in rows]
+            self.stage = 21
+            return ToolCall(
+                name="query_metrics",
+                args={"metric": "memory", "service": self.target, "by": "pod"},
+            )
+        if stage == 21:
+            self.pod_memories = [_number(row, "value") for row in rows]
+            self.stage = 22
+            return ToolCall(
+                name="query_metrics",
+                args={"metric": "queue_depth", "service": self.target},
+            )
+        if stage == 22:
+            self.target_queue = sum(_number(row, "value") for row in rows)
+            self.stage = 8
             return ToolCall(name="search_logs", args={"service": self.target, "level": "ERROR"})
         if stage == 8:
             self.messages = " ".join(str(row.get("message", "")) for row in rows)
@@ -282,6 +386,7 @@ class GraphWalk(Base):
                         "end_minute": int(self.onset) - 1,
                     },
                 )
+            self.stage = 9
             return self._repair()
         if stage == 9:
             return ToolCall(name="wait", args={"minutes": 30})
@@ -319,6 +424,10 @@ class GraphWalk(Base):
             values = [_number(row, "value") for row in rows]
             if values and values[-1] > values[0] + 1:
                 self.stage = 1
+                self.changes = []
+                self.pod_memories = []
+                self.target_queue = 0.0
+                self.pending_services = []
                 return _run("kubectl get services")
             return ToolCall(name="resolve", args={"report": self.report})
         if stage == 14:
@@ -333,6 +442,10 @@ class GraphWalk(Base):
                 return ToolCall(name="wait", args={"minutes": 30})
             self.stage = 1
             self.target = ""
+            self.changes = []
+            self.pod_memories = []
+            self.target_queue = 0.0
+            self.pending_services = []
             return _run("kubectl get services")
         if stage == 15:
             change = self.backtrace_change
@@ -347,12 +460,25 @@ class GraphWalk(Base):
             )
             before = _parameter(change, "before", "timeout_ms") if change else None
             after = _parameter(change, "after", "timeout_ms") if change else None
+            hist_ms = _number(historical, "latency") * 1000 if historical is not None else 0.0
+            change_min = _number(change, "minute") if change is not None else 0.0
+            retry_after = (_parameter(change, "after", "retries") or 0) if change else 0
             threshold_crossed = (
                 historical is not None
-                and before is not None
-                and after is not None
+                and change is not None
                 and _number(historical, "error_ratio") <= 0.01
-                and after < _number(historical, "latency") * 1000 <= before
+                and (
+                    (
+                        before is not None
+                        and after is not None
+                        and (
+                            after < hist_ms <= before
+                            if change_min >= self.onset
+                            else 0.72 * after <= hist_ms <= after * 1.02
+                        )
+                    )
+                    or retry_after >= 3
+                )
             )
             if threshold_crossed:
                 self.stage = 9
