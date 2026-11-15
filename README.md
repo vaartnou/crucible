@@ -24,7 +24,7 @@ task archive, build/run instructions, checksums, and a scored OpenCode playthrou
 
 The fresh Gemini Flash run with separate verification scored **0.64431**, repaired both
 faults, and diagnosed both causes in 60 calls. The public-tool runbook scored **0.90048**
-on the same world. The earlier shared-verifier submission remains available for provenance.
+on the same world.
 The [broader model comparison](docs/oncall-model-comparison.md) reports forty trials and
 the limits of the difficulty claim: this is a narrow scenario family, not a broad model ranking.
 
