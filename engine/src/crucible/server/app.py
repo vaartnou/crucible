@@ -249,12 +249,11 @@ def create_app(settings: Settings | None = None, store: SessionStore | None = No
             error = type(exc).__name__
             raise
         finally:
-            try:
-                await session.close(error)
-            except Exception:
-                if error is None:
-                    raise
-                logger.exception("Failed to finalize sidecar after startup or runtime error")
+            # Drop a half-written transcript if nobody graded the episode.
+            if not session.closed:
+                reason, score = await session.close()
+                if app.state.spectator:
+                    app.state.spectator.finalize(reason, score)
 
     app = FastAPI(
         title="Crucible",
