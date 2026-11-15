@@ -19,6 +19,7 @@ local `.env.worker` file (ignored by Git) with:
 ```dotenv
 HARBOR_WORKER_TOKEN=replace-with-a-random-token-of-at-least-32-characters
 HARBOR_ALLOWED_MODELS=google/gemini-3.8-flash
+HARBOR_API_KEY_NAME=GOOGLE_GENERATIVE_AI_API_KEY
 GOOGLE_GENERATIVE_AI_API_KEY=replace-with-your-provider-key
 HARBOR_MAX_CONCURRENCY=1
 HARBOR_DAILY_JOB_LIMIT=10
@@ -28,6 +29,9 @@ Generate the worker token locally with `python3 -c 'import secrets; print(secret
 Use the same token in the public service. Replace the model list with the OpenCode provider/model
 IDs enabled for your accounts, separated by commas; set the matching provider keys on the
 worker. The UI shows this list as a dropdown. Put a spending cap on the demo provider account.
+`HARBOR_API_KEY_NAME` names the credential variable Harbor must forward to OpenCode. It defaults
+to `GOOGLE_GENERATIVE_AI_API_KEY` in the serve script; set it explicitly for another provider.
+The key value is inherited privately and is never placed in command arguments.
 
 ```sh
 railway sandbox create --private-network --domain 8080 --idle-timeout-minutes 0 --env-file .env.worker
@@ -42,6 +46,10 @@ Inside the Sandbox, check out the same revision as the public app into a directo
 `crucible`. Use a read-only deploy key if the repository is private. Ensure `git` and
 [uv](https://docs.astral.sh/uv/getting-started/installation/) are installed. Docker is supplied
 by the Sandbox; check `docker info` and `docker compose version` before proceeding.
+Some Sandbox images omit the Compose and Buildx CLI plugins. Install both from Docker's
+official [Compose](https://docs.docker.com/compose/install/linux/) and
+[Buildx](https://github.com/docker/buildx#installing) instructions if `docker compose version`
+or `docker buildx version` fails. The Docker daemon alone is insufficient for Harbor builds.
 
 ```sh
 cd crucible
@@ -50,7 +58,9 @@ bash infra/harbor-worker.sh prepare
 
 The script installs Harbor 0.26.0 in an isolated Python 3.13 tool environment, installs the
 locked engine with Python 3.14, exports seeds 0–2, and builds the simulator sidecar image.
-OpenCode 1.19.5 is installed by Harbor inside agent containers. Re-running prepare preserves
+The demo agent image preinstalls OpenCode 1.19.5 with Node 22 so each trial can reuse Docker
+build layers instead of installing Node and OpenCode during startup. Normal Harbor exports
+keep their original agent image. Re-running prepare preserves
 the existing exports and salts. Set `HARBOR_SEEDS=0` before prepare for a single-trial demo.
 
 Exit SSH, then launch a managed background command from your computer (adjust the checkout

@@ -1,6 +1,6 @@
 """Budgeted public tools for oncall@1."""
 
-from typing import ClassVar, Literal
+from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
@@ -39,10 +39,16 @@ class EdgesArgs(Args):
     series: bool = False
 
 
+def _optional_enum_schema(schema: dict[str, Any]) -> None:
+    # Omission retains the empty-string default. Gemini rejects empty enum members.
+    schema["enum"] = [value for value in schema["enum"] if value != ""]
+    schema.pop("default", None)
+
+
 class LogsArgs(Args):
     service: str
     query: str = ""
-    level: Literal["", "INFO", "ERROR"] = ""
+    level: Literal["", "INFO", "ERROR"] = Field(default="", json_schema_extra=_optional_enum_schema)
     since: int = Field(default=10, ge=1, le=150)
     page: int = Field(default=0, ge=0, le=100)
 
@@ -61,7 +67,7 @@ class Report(Args):
         "pool_exhaustion",
         "retry_storm",
         "queue_backlog",
-    ] = ""
+    ] = Field(default="", json_schema_extra=_optional_enum_schema)
     change_id: str = ""
     remediation: str = ""
 

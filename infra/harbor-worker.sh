@@ -20,6 +20,16 @@ case "${1:-}" in
       uv run --directory engine crucible export harbor --task oncall@1 \
         --seeds "${HARBOR_SEEDS:-0-2}" --out "$HARBOR_EXPORTS_DIR/oncall-demo"
     fi
+    # Cache OpenCode in the demo agent image instead of installing it in every trial.
+    first_environment=""
+    for task_dir in "$HARBOR_EXPORTS_DIR/oncall-demo"/*; do
+      if [ -f "$task_dir/task.toml" ]; then
+        cp infra/HarborAgent.Dockerfile "$task_dir/environment/Dockerfile"
+        first_environment="${first_environment:-$task_dir/environment}"
+      fi
+    done
+    : "${first_environment:?No prepared oncall tasks found}"
+    docker build -t crucible-demo-agent:1.19.5 "$first_environment"
     # Preserve existing salted exports; rebuilding the shared image is safe to repeat.
     (cd "$HARBOR_EXPORTS_DIR/oncall-demo" && sh build-sidecar.sh)
     ;;
@@ -33,6 +43,7 @@ case "${1:-}" in
     export HARBOR_WORKER_MODE=true
     export HARBOR_MAX_CONCURRENCY="${HARBOR_MAX_CONCURRENCY:-1}"
     export HARBOR_DAILY_JOB_LIMIT="${HARBOR_DAILY_JOB_LIMIT:-10}"
+    export HARBOR_API_KEY_NAME="${HARBOR_API_KEY_NAME:-GOOGLE_GENERATIVE_AI_API_KEY}"
     export MODE=api
     unset HARBOR_WORKER_URL
     exec uv run --directory engine uvicorn --factory crucible.server.app:create_app \
