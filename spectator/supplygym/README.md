@@ -1,42 +1,48 @@
-# SupplyGym procurement spectator
+# SupplyGym interactive simulator
 
-From the repository root, run the following command with Python 3.10 or later, then open [the local viewer](http://127.0.0.1:8765/).
+SupplyGym now accepts procurement inputs and runs the real Cala simulator from the browser. Choose a scenario seed, set your standing controls, then advance one week or run the rest of the year. Four deterministic baselines run against the same scenario and appear in the existing surplus chart.
+
+## Start the simulator
+
+From the repository root, install the engine with Python 3.14 and start the local server:
 
 ```sh
-python spectator/supplygym/serve.py
+uv sync --directory engine --locked
+uv run --project engine python spectator/supplygym/serve.py
 ```
 
-The viewer opens on week 21 of a public, scripted SupplyGym year. The buyer saw three late orders. Ask the audience whether they would pay to expedite, then select **Reveal decision & result**. The recorded buyer increased the expedited share from 0% to 30%, spent $621 on expedited freight, and finished the week with $2,700.20 in operating surplus. All five curves come from the same scenario. [Replay provenance](demo/README.md)
+Open [SupplyGym](http://127.0.0.1:8765/).
 
-Play or scrub the recording to inspect another week. **Catch up** shows the latest available week, **Open recorded demo** resets the example, and **Choose folder** accepts another saved PR 37 run directory.
+1. Set the scenario seed and procurement controls, then select **Create simulation**.
+2. Wait for the four baseline years to finish preparing. Your strategy starts at week zero; the current public observation is shown before you act.
+3. Select **Apply & advance one week** to submit a decision, or **Run remaining year** to repeat the standing controls through week 53.
+4. Pause automation to revise the next decision. Cancel to stop an unfinished episode; its reward is zero. Create a new simulation after completion or cancellation to try different inputs.
 
-## Follow a live Harbor run
+The controls cover replenishment formula, safety stock, order multiplier and expedited shipping. Advanced controls accept supplier weights and the next alternative supplier approval. The engine validates the inputs before advancing the week. Omitted controls retain their current values. Alternative approval is a one-time action.
 
-The live feed requires the runner and simulator from [PR 37](https://github.com/vaartnou/crucible/pull/37). This viewer can run independently against saved files. For Linux or WSL, check the [spectator permission report](../../docs/supplygym-spectator-permission-report.md) before starting a model run. The tested local correction mounts the feed at `/app/spectator-events.jsonl`.
+The automatic runner repeats your chosen controls. It requires no model credentials or Docker. Its curve is labelled **Your strategy**; an externally connected model run retains the **AI** label. A paused chart only pauses playback; **Pause simulation** stops automatic decisions between weeks.
 
-For one Sonnet 5.5 year, run the following from the PR 37 checkout in Ubuntu or Bash. The key prompt hides your Anthropic API key. Use a new output directory for each invocation.
+Repeating a seed while the server remains running uses the same private scenario, so you can compare input choices. Restarting the server creates new private scenario material. Each run has its own directory under `runs/supplygym-ui/` (override with `--output-dir`). Outputs survive a restart as saved recordings; the server manages one active simulation at a time. The API and viewer bind to loopback. Only allowlisted public feeds are served; private transcripts and scenario material are never served.
 
-```bash
-RUNNER=$(find engine/scripts -maxdepth 1 -name 'run_*demo.py' -print -quit)
-if [ -f "$RUNNER" ]; then
-  uv run --directory engine python "$PWD/$RUNNER" --out "$PWD/runs/supplygym-sonnet-single" --start-seed 62000 --count 1 --model anthropic/claude-sonnet-5-5 --key-env ANTHROPIC_API_KEY --prompt-key --concurrency 1
-else
-  echo "The PR 37 demo runner is missing from this checkout."
-fi
-```
+## Recorded and external runs
 
-The legend calls the model-driven strategy **AI**. Annual results show operating surplus, reward, and the theoretical upper bound.
+The existing recorded demo, file/folder import, live manifest connection, timeline and decision inspector remain available. With Python 3.10 or later, `python spectator/supplygym/serve.py` can serve the viewer without engine dependencies; the simulation panel explains how to enable execution.
 
-On the machine with access to the runner output, start the viewer with the output directory passed to PR 37â€™s demo runner. For example:
+To watch an external Harbor run:
 
 ```sh
 python spectator/supplygym/serve.py --run-dir runs/supplygym-demo --port 8766
 ```
 
-Open [the live viewer](http://127.0.0.1:8766/) and select **Connect live â†’ Connect**. The default manifest is `/run/spectator-manifest.json`. The server binds to loopback and serves only the viewer, the manifest, and the public spectator feeds. A connection started before the manifest is ready retries automatically. The baseline curves advance through the latest completed buyer week. Pause or scrub to hold the display while polling continues. Press play to resume following live.
+Open [the live viewer](http://127.0.0.1:8766/) and select **Connect live**, using `/run/spectator-manifest.json`. This connection watches an existing run; the local simulation controls create separate in-process runs. [PR41](https://github.com/vaartnou/crucible/pull/41) describes the external model workflow. [Bundled replay provenance](demo/README.md)
 
-## Reading the results
+The chart shows cumulative operating surplus in USD. Completed-year rewards and upper bounds come from the engine's final spectator record. Simulator and scorer identities keep incompatible recordings separate. Baselines are revealed only through your strategy's latest completed week.
 
-The vertical axis shows the simulatorâ€™s cumulative operating surplus in USD. Negative weeks and falling lines are valid. Final values come from each strategyâ€™s terminal spectator record. The bundled recording uses PR 37's original scorer: clipped operating surplus divided by its scenario-specific upper bound. PR 46 changes live Cala @3 scoring to terminal-inclusive adjusted surplus above a fixed default-play floor; its reported reward is authoritative. The chart continues to show operating surplus, separately from reward. Scorer identities keep historical and current runs separate. The upper bound relaxes shipping constraints and can exceed what a legal weekly strategy could earn. [PR 37](https://github.com/vaartnou/crucible/pull/37)
+## Validation
 
-Run the parser and live HTTP checks with `node --test spectator/supplygym/feed.test.mjs spectator/supplygym/live.test.mjs`. The HTTP check starts a local server on a temporary port.
+```sh
+node --test spectator/supplygym/*.test.mjs
+uv run --directory engine pytest ../spectator/supplygym/test_simulation.py
+```
+
+The HTTP/engine integration tests exercise real episodes, final accounting, input validation, cancellation, repeat scenarios, isolated runs and the public-file boundary.

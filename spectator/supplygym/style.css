@@ -737,3 +737,19 @@ footer b {
   overflow-wrap:anywhere;
   max-width:70%
 }
+.simulator { padding: 28px 32px; margin-bottom: 20px; }
+.simulator .section-head { margin-bottom: 12px; }
+.sim-message { color: var(--muted); font-size: 14px; min-height: 1.5em; }
+.control-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; }
+.simulator label { display: flex; flex-direction: column; gap: 7px; font-size: 12px; font-weight: 700; color: var(--ink); }
+.simulator label small { font-weight: 400; color: var(--muted); }
+.simulator input, .simulator select { width: 100%; min-width: 0; padding: 10px; border: 1px solid var(--line); border-radius: 5px; background: var(--bg); color: var(--ink); font: inherit; font-size: 14px; }
+.advanced { margin: 18px 0; color: var(--ink); font-size: 13px; }
+.advanced summary { cursor: pointer; font-weight: 700; }
+.advanced p { color: var(--muted); }
+.advanced > label { max-width: 220px; margin-top: 14px; }
+.weights { grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); }
+.sim-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; margin-top: 20px; }
+.sim-observation { border-top: 1px solid var(--line); margin-top: 24px; padding-top: 20px; }
+.sim-observation .detail-grid { margin-top: 12px; }
+@media (max-width: 600px) { .simulator { padding: 22px 18px; } .sim-actions .button { flex: 1 1 180px; } }

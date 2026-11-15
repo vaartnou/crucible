@@ -1,5 +1,6 @@
 import {loadFiles, pollManifest} from './feed.js';
 import {createUI} from './ui.js';
+import {createSimulationControls} from './controls.js';
 
 let groups = [];
 let stopFeed = null;
@@ -143,4 +144,5 @@ const viewer = createUI({
   },
 });
 
+createSimulationControls({onManifest: url => connect(url)});
 connect('./demo/spectator-manifest.json', true);
