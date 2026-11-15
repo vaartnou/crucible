@@ -8,7 +8,7 @@ tape. A refused call changes nothing: not the clock, not the controls, not the f
 import math
 from typing import Annotated, Any, ClassVar
 
-from pydantic import BaseModel, Field, JsonValue
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from crucible.core.registry import register_task
 from crucible.core.scoring import Score
@@ -47,9 +47,13 @@ Weight = Annotated[float, Field(ge=math.exp(-4.0), le=math.exp(4.0))]
 class NoArgs(BaseModel):
     """Arguments of a tool that takes none."""
 
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
 
 class ControlsArgs(BaseModel):
     """Arguments of `set_controls`. Omitted fields keep their current value."""
+
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
     supplier_weights: dict[str, Weight] | None = Field(
         default=None,
@@ -212,6 +216,7 @@ class SupplyGymTask(Task):
                 content={
                     "last_week": {
                         "profit": round(week.profit, 2),
+                        "operating_surplus": round(week.operating_surplus, 2),
                         "lost_units": week.lost_units,
                         "expedite_cost": round(week.expedite_cost, 2),
                         "switching_fee": round(week.switching_fee, 2),
@@ -254,9 +259,11 @@ times and splits them across suppliers in proportion to capacity. Goods usually 
 time, so low on-hand at decision time is normal and not an emergency by itself.
 
 Tools: get_briefing (static facts), get_status (current view), set_controls (apply controls \
-and advance one week; omitted fields keep their value; refused calls change nothing), finish. \
-You have {MAX_STEPS} tool calls. Stopping early, or never calling set_controls, leaves the \
-remaining weeks on the default rule.
+and advance one week; returns the new weekly status and episode_over flag, so you do not need \
+redundant get_status calls every week; omitted fields keep their value; refused calls change \
+nothing), finish. \
+You have {self.spec.max_steps} tool calls. Stopping early, or never calling set_controls, \
+leaves the remaining weeks on the default rule.
 
 {self._scoring_instruction()}"""
 

@@ -40,6 +40,7 @@ RUBRIC, RUBRIC_HASH = load_scoring_config(
     Path(__file__).with_name("outcome_scoring.yaml"), OutcomeRubric
 )
 COST_KEYS = ("purchase", "holding", "stockout", "expedite", "switching")
+CALA_V3_MAX_STEPS = 200
 
 
 def grade_outcomes(play: Play, rubric: OutcomeRubric = RUBRIC) -> Score:
@@ -214,13 +215,21 @@ class SupplyGymCalaOutcomes(OutcomeTask, SupplyGymCalaTask):
 class SupplyGymCalaUpperBound(SupplyGymCalaOutcomes):
     """Cala controls with a fixed, scenario-specific optimistic surplus denominator."""
 
-    spec = SupplyGymCalaTask.spec.model_copy(update={"version": 3})
+    spec = SupplyGymCalaTask.spec.model_copy(
+        update={"version": 3, "max_steps": CALA_V3_MAX_STEPS}
+    )
     scoring_hash = hashlib.sha256(
         json.dumps(
             {"method": "cala-surplus-upper-bound-v1", "world": cala_world_identity()},
             sort_keys=True,
         ).encode()
     ).hexdigest()
+
+    def tools(self) -> list[ToolSpec]:
+        return [tool for tool in super().tools() if tool.name != "finish"]
+
+    def instruction(self) -> str:
+        return super().instruction().replace(", finish.", ".")
 
     async def reset(self, seed: int, difficulty: int = 0, *, salt: str | None = None):
         from crucible.envs.supplygym.cala_upper_bound import surplus_upper_bound
