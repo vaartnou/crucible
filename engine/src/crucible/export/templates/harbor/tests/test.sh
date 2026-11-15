@@ -1,7 +1,7 @@
 #!/bin/bash
 # Read the grade from the sidecar and write the 0-1 reward for Harbor.
 # GRADE_TOKEN comes from [verifier.env]; the agent never has it.
-# The breakdown goes to grade.json: Harbor reads reward.json as a dict of numeric rewards.
+# Harbor reads the single score from reward.txt; diagnostics stay in grade.json.
 mkdir -p /logs/verifier
 python3 - <<'PY'
 import json, math, os, time, urllib.request
@@ -27,19 +27,13 @@ for _ in range(10):
         time.sleep(1)
 
 if body is None:
-    write("reward.json", json.dumps(dict.fromkeys(("reward", "impact", "verified", "diagnosis", "penalty"), 0.0)))
+    write("reward.txt", "0.0\n")
     write("grade_error.txt", error or "unknown error")
     print("grade failed:", error)
 else:
-    reward = min(1.0, max(0.0, float(body["reward"])))
-    breakdown, flags = body.get("breakdown", {}), body.get("flags", {})
-    def number(value):
-        value = float(value)
-        return value if math.isfinite(value) else 0.0
-    rewards = {"reward": number(reward)}
-    for key in ("impact", "verified", "diagnosis", "penalty"):
-        rewards[key] = number(breakdown.get(key, flags.get(key, 0.0)))
-    write("reward.json", json.dumps(rewards))
+    reward = float(body["reward"])
+    reward = min(1.0, max(0.0, reward)) if math.isfinite(reward) else 0.0
+    write("reward.txt", f"{reward}\n")
     summary = {k: body[k] for k in ("reward", "breakdown", "flags", "steps", "stop_reason")}
     write("grade.json", json.dumps(summary, indent=2))
     write("transcript.json", json.dumps(body["transcript"], indent=2))

@@ -377,6 +377,8 @@ export interface HarborJobsState {
   jobs_dir: string;
   exports_dir: string;
   harbor_available: boolean;
+  allowed_models?: string[];
+  max_concurrency?: number;
   exports: Array<{ id: string; name: string; tasks: number }>;
   jobs: HarborJob[];
 }

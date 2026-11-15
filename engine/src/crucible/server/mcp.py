@@ -2,7 +2,7 @@
 
 import asyncio
 import json
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import mcp.types as types
 from mcp.server.context import ServerRequestContext
@@ -11,7 +11,9 @@ from pydantic import JsonValue
 
 from crucible.core.session import EpisodeSession
 from crucible.core.tools import ToolCall
-from crucible.server.spectator import Spectator
+
+if TYPE_CHECKING:
+    from crucible.server.spectator import Spectator
 
 
 def build_mcp_server(
@@ -50,7 +52,11 @@ def build_mcp_server(
                     # continuation after a failed live write.
                     await session.close(error="spectator feed write failed")
                     raise
-                if result.ok and session.task.done():
+                if (
+                    session.closed
+                    or (not result.ok and session.steps_used >= session.max_steps)
+                    or (result.ok and session.task.done())
+                ):
                     reason, score = await session.close()
                     spectator.finalize(reason, score)
         dumped = result.model_dump(mode="json")

@@ -44,6 +44,7 @@ class Week:
     lost_units: int
     expedite_cost: float
     switching_fee: float
+    operating_surplus: float = 0.0
 
 
 class Play:
@@ -108,6 +109,10 @@ class Play:
             self.log.append({k: v for k, v in item.items() if k not in ("node", "severity")})
         self.weeks += 1
         after = status_controls(env)
+        cost_keys = ("purchase", "holding", "stockout", "expedite", "switching")
+        surplus0 = t0["revenue"] - sum(t0[k] for k in cost_keys)
+        surplus1 = env.tot["revenue"] - sum(env.tot[k] for k in cost_keys)
+        surplus_delta = float(surplus1 - surplus0)
         self.ledger = {
             "week": self.weeks,
             "revenue": round(float(env.tot["revenue"] - t0["revenue"]), 2),
@@ -117,6 +122,7 @@ class Play:
             "lost_sales": round(float(env.tot["stockout"] - t0["stockout"]), 2),
             "switching": round(float(env.tot["switching"] - t0["switching"]), 2),
             "profit": round(float(env.tot["profit"] - t0["profit"]), 2),
+            "operating_surplus": round(surplus_delta, 2),
             "delta_vs_default": round(float(env.tot["profit"] - alt.tot["profit"]), 2),
             "previous_controls": before,
             "controls_changed": sum(
@@ -128,6 +134,7 @@ class Play:
             lost_units=int(env.tot["lost"] - t0["lost"]),
             expedite_cost=env.tot["expedite"] - t0["expedite"],
             switching_fee=env.tot["switching"] - t0["switching"],
+            operating_surplus=surplus_delta,
         )
 
     def run_default(self) -> None:

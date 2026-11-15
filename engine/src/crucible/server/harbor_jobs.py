@@ -51,6 +51,12 @@ class HarborJobs:
     def __init__(self, settings: Settings) -> None:
         self.jobs_dir = settings.harbor_jobs_dir.resolve()
         self.exports_dir = settings.harbor_exports_dir.resolve()
+        self.allowed_models = [
+            model.strip() for model in settings.harbor_allowed_models.split(",") if model.strip()
+        ]
+        self.max_concurrency = settings.harbor_max_concurrency
+        self.daily_job_limit = settings.harbor_daily_job_limit
+        self.api_key_name = settings.harbor_api_key_name
         self.processes: dict[str, subprocess.Popen[bytes]] = {}
         self.lock = asyncio.Lock()
 
@@ -121,12 +127,28 @@ class HarborJobs:
             "jobs_dir": str(self.jobs_dir),
             "exports_dir": str(self.exports_dir),
             "harbor_available": shutil.which("harbor") is not None,
+            "allowed_models": self.allowed_models,
+            "max_concurrency": self.max_concurrency,
             "exports": self.exports(),
             "jobs": self.list_jobs(),
         }
 
     async def launch(self, req: LaunchHarborRequest) -> dict[str, Any]:
         async with self.lock:
+            if self.allowed_models and req.model not in self.allowed_models:
+                raise HTTPException(400, "Choose an approved model from the list.")
+            if req.concurrency > self.max_concurrency:
+                raise HTTPException(
+                    400, f"At most {self.max_concurrency} concurrent trials allowed."
+                )
+            if self.daily_job_limit:
+                today = datetime.now(UTC).strftime("oncall-%Y%m%d-")
+                count = sum(
+                    folder.is_dir() and folder.name.startswith(today)
+                    for folder in self.jobs_dir.glob("oncall-*")
+                )
+                if count >= self.daily_job_limit:
+                    raise HTTPException(429, "The demo's daily evaluation limit has been reached.")
             binary = shutil.which("harbor")
             if not binary:
                 raise HTTPException(503, "Harbor is not installed on the UI server.")
@@ -146,10 +168,10 @@ class HarborJobs:
                 )
             except OSError, subprocess.TimeoutExpired:
                 raise HTTPException(
-                    503, "Docker is unavailable. Start Docker Desktop and retry."
+                    503, "Docker is unavailable on the evaluation worker."
                 ) from None
             if check.returncode:
-                raise HTTPException(503, "Docker is unavailable. Start Docker Desktop and retry.")
+                raise HTTPException(503, "Docker is unavailable on the evaluation worker.")
             name = f"oncall-{datetime.now(UTC):%Y%m%d-%H%M%S}-{uuid4().hex[:6]}"
             folder = self.jobs_dir / name
             await asyncio.to_thread(folder.mkdir, parents=True)
@@ -173,8 +195,15 @@ class HarborJobs:
                 "--n-concurrent",
                 str(req.concurrency),
             ]
-            if req.model.startswith("google/") and os.environ.get("GOOGLE_GENERATIVE_AI_API_KEY"):
-                command.extend(["--api-key-name", "GOOGLE_GENERATIVE_AI_API_KEY"])
+            api_key_name = self.api_key_name
+            if (
+                not api_key_name
+                and req.model.startswith("google/")
+                and os.environ.get("GOOGLE_GENERATIVE_AI_API_KEY")
+            ):
+                api_key_name = "GOOGLE_GENERATIVE_AI_API_KEY"
+            if api_key_name:
+                command.extend(["--api-key-name", api_key_name])
             # Credentials are inherited from the server environment, never placed in arguments.
             try:
                 with (folder / "launcher.log").open("wb") as log:

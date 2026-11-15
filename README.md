@@ -18,3 +18,7 @@ Implementation scope, measured results and the tight feedback commands: [oncall 
 The web UI uses Harbor + OpenCode for model evaluations. Watch launches Docker trials;
 Runs reads their saved transcripts from a configured Harbor jobs directory. See
 [UI setup](docs/using-environments.md#ui-and-saved-evaluations).
+
+## Deploy the demo
+
+See [Railway deployment](docs/railway.md) for the combined UI/API image and service settings.

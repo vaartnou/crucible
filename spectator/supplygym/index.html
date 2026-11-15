@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+ <head>
+  <meta charset="utf-8"/>
+  <meta content="width=device-width, initial-scale=1" name="viewport"/>
+  <meta content="#101d1a" name="theme-color"/>
+  <title>
+   SupplyGym spectator
+  </title>
+  <link href="./style.css" rel="stylesheet"/>
+ </head>
+ <body>
+  <header class="topbar">
+   <div class="brand">
+    <span class="brand-mark">
+     S
+    </span>
+    <span>
+     <b>
+      SUPPLYGYM
+     </b>
+     <small>
+      SPECTATOR
+     </small>
+    </span>
+   </div>
+   <div class="top-right">
+    <span class="status-dot" id="status-dot">
+    </span>
+    <span id="status">
+     Awaiting data
+    </span>
+    <span class="top-divider">
+    </span>
+    <span id="source">
+     NO SOURCE
+    </span>
+   </div>
+  </header>
+  <main>
+   <section class="hero">
+    <div>
+     <div class="eyebrow">
+      <span class="eyebrow-line">
+      </span>
+      STRATEGY COMPARISON
+     </div>
+     <h1>
+      SupplyGym procurement
+     </h1>
+     <p>
+      Operating surplus across five buying strategies.
+     </p>
+    </div>
+    <div class="hero-side">
+     <span class="label">
+      CURRENT VIEW
+     </span>
+     <div class="hero-week">
+      <span id="hero-week">
+       —
+      </span>
+      <small>
+       / 53
+      </small>
+     </div>
+     <span class="hero-caption">
+      completed weeks
+     </span>
+    </div>
+   </section>
+   <section aria-label="Data source" class="toolbar panel">
+    <div class="source-copy">
+     <span class="section-index">
+      DATA SOURCE
+     </span>
+     <span id="status-detail">
+      Load a recorded run or connect to a live manifest.
+     </span>
+    </div>
+    <div class="source-actions">
+     <button class="button button-light" id="demo">
+      Open recorded demo
+      <span>
+       ↗
+      </span>
+     </button>
+     <label class="button button-outline file-label" role="button" tabindex="0">
+      Choose files
+      <input accept=".json,.jsonl,application/json" hidden="" id="files" multiple="" type="file"/>
+     </label>
+     <label class="button button-outline file-label" role="button" tabindex="0">
+      Choose folder
+      <input hidden="" id="folder" multiple="" type="file" webkitdirectory=""/>
+     </label>
+     <details class="connect">
+      <summary class="button button-outline">
+       Connect live
+       <span>
+        ↗
+       </span>
+      </summary>
+      <form id="connect-form">
+       <label for="url">
+        Manifest URL
+       </label>
+       <input id="url" type="text" value="/run/spectator-manifest.json"/>
+       <div>
+        <button class="button button-light" type="submit">
+         Connect
+        </button>
+        <button class="button button-outline" id="disconnect" type="button">
+         Disconnect
+        </button>
+       </div>
+      </form>
+     </details>
+    </div>
+   </section>
+   <section class="chart-section panel">
+    <div class="section-head">
+     <div>
+      <div class="section-index">
+       COMPARISON
+      </div>
+      <h2>
+       Surplus over time
+       <span class="period">
+        .
+       </span>
+      </h2>
+      <p>
+       Cumulative operating surplus
+       <span class="sep">
+        /
+       </span>
+       USD
+      </p>
+     </div>
+     <div class="scenario">
+      <label for="group">
+       SCENARIO
+      </label>
+      <select aria-label="Scenario" id="group">
+       <option value="">
+        No scenario loaded
+       </option>
+      </select>
+     </div>
+    </div>
+    <div class="legend" id="legend">
+    </div>
+    <div class="chart-wrap">
+     <svg aria-label="Cumulative operating surplus by completed week" id="chart" role="img" viewbox="0 0 1000 330">
+     </svg>
+     <div class="chart-empty" id="chart-empty">
+      <span>
+       ↗
+      </span>
+      <strong>
+       Waiting for the first completed week
+      </strong>
+      <small>
+       Load a run to see the comparison take shape.
+      </small>
+     </div>
+    </div>
+    <div class="timeline">
+     <div class="timeline-buttons">
+      <button aria-label="Previous week" class="icon-button" id="previous">
+       ←
+      </button>
+      <button aria-label="Play" class="play-button" id="play">
+       ▶
+      </button>
+      <button aria-label="Next week" class="icon-button" id="next">
+       →
+      </button>
+     </div>
+     <div class="scrub">
+      <div class="scrub-labels">
+       <span>
+        WEEK
+        <b id="selected-week">
+         0
+        </b>
+       </span>
+       <span id="latest-week">
+        LATEST 0
+       </span>
+      </div>
+      <input aria-label="Select completed week" id="seek" max="0" min="0" type="range" value="0"/>
+     </div>
+     <button class="text-button" id="latest">
+      Catch up ↗
+     </button>
+    </div>
+   </section>
+   <div class="bottom-grid">
+    <section class="panel decision">
+     <div class="section-head compact">
+      <div>
+       <div class="section-index">
+        DECISION INSPECTOR
+       </div>
+       <h2>
+        At the decision
+        <span class="period">
+         .
+        </span>
+       </h2>
+       <p>
+        What the AI knew before acting.
+       </p>
+      </div>
+      <span class="tag" id="decision-week">
+       WEEK —
+      </span>
+     </div>
+     <div class="detail-content empty-copy" id="observation">
+      Select a completed week to inspect the public observation.
+     </div>
+     <div class="reveal-row">
+      <button class="button button-dark" disabled="" id="reveal">
+       Reveal decision &amp; result
+       <span>
+        ↓
+       </span>
+      </button>
+      <span>
+       Pause the display to invite a call.
+      </span>
+     </div>
+     <div hidden="" id="revealed">
+     </div>
+    </section>
+    <section class="panel results">
+     <div class="section-head compact">
+      <div>
+       <div class="section-index">
+        VERIFIED RESULTS
+       </div>
+       <h2>
+        The final tally
+        <span class="period">
+         .
+        </span>
+       </h2>
+       <p>
+        Annual results appear when the run reaches its final week.
+       </p>
+      </div>
+     </div>
+     <div class="results-body" id="results">
+      <div class="empty-copy">
+       Verified results will appear here when available.
+      </div>
+     </div>
+    </section>
+   </div>
+   <footer>
+    <span>
+     SUPPLYGYM
+    </span>
+    <span>
+     PUBLIC SPECTATOR VIEW
+     <span class="sep">
+      /
+     </span>
+     OPERATING SURPLUS IN USD
+    </span>
+   </footer>
+  </main>
+  <script src="./app.js" type="module">
+  </script>
+ </body>
+</html>

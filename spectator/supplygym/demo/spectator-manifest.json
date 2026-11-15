@@ -1,0 +1,13 @@
+[
+  {
+    "seed": 62000,
+    "scenario_comparison_id": "3d3347b987ce031f3910b976fe95d1abda9d7f226cd70ee10ade7443cb27ca7a",
+    "events": {
+      "ss": "baselines/seed-62000/ss/events.jsonl",
+      "base_stock": "baselines/seed-62000/base_stock/events.jsonl",
+      "fixed_lot": "baselines/seed-62000/fixed_lot/events.jsonl",
+      "fill_adjusted_base_stock": "baselines/seed-62000/fill_adjusted_base_stock/events.jsonl",
+      "scripted_buyer": "live/seed-62000/events.jsonl"
+    }
+  }
+]

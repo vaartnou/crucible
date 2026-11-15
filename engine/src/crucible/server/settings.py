@@ -3,6 +3,7 @@
 from pathlib import Path
 from typing import Literal
 
+from pydantic import Field
 from pydantic_settings import BaseSettings
 
 
@@ -15,6 +16,13 @@ class Settings(BaseSettings):
     runs_dir: Path = Path("runs/server")
     harbor_jobs_dir: Path = Path("runs/harbor-jobs")
     harbor_exports_dir: Path = Path("runs")
+    harbor_worker_url: str = ""
+    harbor_worker_token: str = Field(default="", repr=False)
+    harbor_worker_mode: bool = False
+    harbor_allowed_models: str = ""
+    harbor_api_key_name: str = Field(default="", pattern=r"^$|^[A-Za-z_][A-Za-z0-9_]*$")
+    harbor_max_concurrency: int = Field(default=4, ge=1, le=4)
+    harbor_daily_job_limit: int = Field(default=0, ge=0)
     session_ttl_seconds: int = 3600
     grade_token: str = ""
     solution_token: str = ""

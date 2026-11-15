@@ -233,7 +233,11 @@ def export_harbor(
         for rel, resource in templates:
             target = folder / rel
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(_render(resource.read_text(), values))
+            target.write_text(
+                _render(resource.read_text(encoding="utf-8"), values),
+                encoding="utf-8",
+                newline="\n",
+            )
             if rel in _EXECUTABLE:
                 target.chmod(0o755)
         for vendor in ("environment/mcp-server",):

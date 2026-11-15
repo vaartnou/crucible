@@ -16,6 +16,7 @@ from crucible.envs.supplygym.policies.views import StatusView, to_vector
 __all__ = ["Decider", "make_decider"]
 
 CALA_REFERENCE = "cala_ppo"
+CALA_SERVICE_REFERENCE = "service_availability"
 CALA_CHECKPOINT = "cala_ppo.npz"
 CONTROL_SCALES = {
     "supplier_weight_log_scale": 4.0,
@@ -68,6 +69,27 @@ class AvailabilityRule:
         return {"supplier_weights": weights}
 
 
+class ServiceAvailabilityRule(AvailabilityRule):
+    """Public-signal allocation with a fleet-risk safety buffer for Cala @3.
+
+    Retain half a day of safety stock in calm conditions, increasing smoothly
+    with mean incumbent risk above its 0.15 background level. Isolated supplier
+    risk is handled by reallocation; broader risk calls for more working stock.
+    This rule has no checkpoint, training, seed lookup, or hidden-state access.
+    """
+
+    def decide(self, status: dict[str, Any]) -> dict[str, Any]:
+        args = super().decide(status)
+        suppliers = [s for s in status["suppliers"] if s["kind"] == "direct"]
+        mean_risk = sum(s["risk"] for s in suppliers) / len(suppliers)
+        args.update(
+            safety_stock_days=min(3.0, 0.5 + 10.0 * max(0.0, mean_risk - 0.15)),
+            order_multiplier=1.0,
+            expedite_fraction=0.0,
+        )
+        return args
+
+
 def _next_alt(view: StatusView) -> str | None:
     for s in view.suppliers:
         if s.kind == "alt" and s.state == "not_approved":
@@ -111,6 +133,8 @@ class PpoDecider:
 
 
 def make_decider(name: str) -> Decider:
+    if name == CALA_SERVICE_REFERENCE:
+        return ServiceAvailabilityRule()
     if name == "availability":
         return AvailabilityRule()
     if name == "ss":

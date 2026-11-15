@@ -6,7 +6,7 @@ import hmac
 import logging
 from collections.abc import AsyncGenerator
 from pathlib import Path
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 from uuid import uuid4
 
 from fastapi import FastAPI, Header, HTTPException
@@ -22,12 +22,15 @@ from crucible.core.session import EpisodeSession
 from crucible.core.task import Task
 from crucible.core.tools import Observation, ToolCall, ToolKind, ToolResult, result_text
 from crucible.core.transcript import StopReason, TranscriptWriter, read_transcript
+from crucible.server.harbor_worker import HarborWorkerMiddleware, validate_worker_settings
 from crucible.server.logging import configure_logging
 from crucible.server.mcp import build_mcp_server
 from crucible.server.settings import Settings
-from crucible.server.spectator import Spectator
 from crucible.server.store import Entry, InMemorySessionStore, SessionStore
 from crucible.server.workbench import WorkbenchManager, add_workbench_routes
+
+if TYPE_CHECKING:
+    from crucible.server.spectator import Spectator
 
 
 class ToolInfo(BaseModel):
@@ -158,8 +161,11 @@ def _add_sidecar_routes(app: FastAPI, settings: Settings, logger: logging.Logger
     path = settings.runs_dir / "episodes" / f"sidecar-{task.spec.ref}-{seed}.jsonl"
     session = EpisodeSession(task, seed, TranscriptWriter(path), salt=settings.sidecar_salt)
     lock = asyncio.Lock()
-    spectator = (
-        Spectator(
+    spectator: Spectator | None = None
+    if settings.spectator_path:
+        from crucible.server.spectator import Spectator
+
+        spectator = Spectator(
             settings.spectator_path,
             task,
             seed,
@@ -167,9 +173,6 @@ def _add_sidecar_routes(app: FastAPI, settings: Settings, logger: logging.Logger
             settings.spectator_run_id,
             settings.spectator_strategy,
         )
-        if settings.spectator_path
-        else None
-    )
     app.state.spectator = spectator
     manager = StreamableHTTPSessionManager(
         build_mcp_server(session, lock, spectator), json_response=True, stateless=True
@@ -245,6 +248,7 @@ def create_app(settings: Settings | None = None, store: SessionStore | None = No
     Api mode serves `/v1`. Sidecar mode serves one episode on `/mcp` and `/grade`, no `/v1`.
     """
     settings = settings or Settings()
+    validate_worker_settings(settings)
     logger = configure_logging(settings.log_level)
     if settings.mode == "sidecar" and not settings.grade_token:
         raise ValueError("GRADE_TOKEN is required in sidecar mode")
@@ -297,6 +301,7 @@ def create_app(settings: Settings | None = None, store: SessionStore | None = No
         openapi_url=None,
         lifespan=lifespan,
     )
+    app.add_middleware(HarborWorkerMiddleware, settings=settings)
 
     @app.get("/healthz", response_class=PlainTextResponse)
     async def healthz() -> str:  # pyright: ignore[reportUnusedFunction]

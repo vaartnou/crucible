@@ -15,7 +15,7 @@ from importlib.metadata import version
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
 from crucible.core.episode import InfraError
 from crucible.core.jobs import Job
@@ -53,9 +53,12 @@ class FrozenModel(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
 
 
+TaskRef = Literal["supplygym@2", "supplygym-fresh@2", "supplygym-cala@2", "supplygym-cala@3"]
+
+
 class Scenario(FrozenModel):
     id: str = Field(pattern=r"^[a-zA-Z0-9_-]+$")
-    task: Literal["supplygym@2", "supplygym-fresh@2", "supplygym-cala@2"]
+    task: TaskRef
     split: Literal["dev", "heldout"]
     seed: int = Field(ge=0)
     role: Literal["buyer"] = "buyer"
@@ -70,7 +73,7 @@ class Suite(FrozenModel):
     source_hash: str
     runtime: dict[str, str] = Field(default_factory=runtime_identity)
     rubric: dict[str, float]
-    max_steps: Literal[120] = 120
+    max_steps: Literal[120, 200] = 120
     agent_timeout_seconds: float = Field(default=3600, gt=0)
     infrastructure_retries: int = Field(default=2, ge=0, le=10)
     scenarios: tuple[Scenario, ...] = Field(min_length=1)
@@ -107,22 +110,27 @@ def write_json(path: Path, value: Any) -> None:
     temporary.replace(path)
 
 
-async def freeze_suite() -> Suite:
+async def freeze_suite(
+    tasks: tuple[TaskRef, ...] = ("supplygym@2", "supplygym-fresh@2", "supplygym-cala@2"),
+) -> Suite:
     scenarios: list[Scenario] = []
-    tasks = ("supplygym@2", "supplygym-fresh@2", "supplygym-cala@2")
     banks: list[tuple[Literal["dev", "heldout"], range]] = [
         ("dev", range(1000, 1010)),
         ("heldout", range(62000, 62010)),
     ]
+    max_steps: Literal[120, 200] = 120
     for split, seeds in banks:
         for ref in tasks:
             for seed in seeds:
                 task = get_task(ref)
                 assert isinstance(task, OutcomeTask)
+                if task.spec.max_steps == 200:
+                    max_steps = 200
                 await task.reset(seed)
+                slug = ref.replace("@", "-v") if ref.endswith("@3") else ref.split("@")[0]
                 scenarios.append(
                     Scenario(
-                        id=f"{split}-{ref.split('@')[0]}-{seed}",
+                        id=f"{split}-{slug}-{seed}",
                         task=ref,
                         split=split,
                         seed=seed,
@@ -131,10 +139,14 @@ async def freeze_suite() -> Suite:
                         initial_state_hash=digest(snapshot(task)),
                     )
                 )
+    name = (
+        "supplygym-cala-v3" if tasks == ("supplygym-cala@3",) else "supplygym-outcomes-formulas-v1"
+    )
     return Suite(
-        name="supplygym-outcomes-formulas-v1",
+        name=name,
         source_hash=source_digest(),
         rubric=RUBRIC.model_dump(),
+        max_steps=max_steps,
         scenarios=tuple(scenarios),
     )
 
@@ -202,7 +214,7 @@ async def run_attempt(
                 await policy.reset(task.spec, task.tools(), task.instruction())
         finally:
             agent_seconds += time.perf_counter() - before
-        for _ in range(suite.max_steps):
+        for _ in range(min(suite.max_steps, task.spec.max_steps)):
             if task.done():
                 break
             stage = "agent"
@@ -370,10 +382,11 @@ async def audit_report(report_path: Path) -> dict[str, Any]:
             report["policy"],
         ):
             raise ValueError("Trace identity mismatch")
-        if trace.header.scoring_hash != scenario.scoring_hash or len(trace.steps) > suite.max_steps:
-            raise ValueError("Trace rubric or call budget mismatch")
         task = get_task(scenario.task)
         assert isinstance(task, OutcomeTask)
+        limit = min(suite.max_steps, task.spec.max_steps)
+        if trace.header.scoring_hash != scenario.scoring_hash or len(trace.steps) > limit:
+            raise ValueError("Trace rubric or call budget mismatch")
         await task.reset(scenario.seed)
         if digest(snapshot(task)) != scenario.initial_state_hash:
             raise ValueError("Replay initial state mismatch")
@@ -397,6 +410,10 @@ async def main() -> None:
     commands = parser.add_subparsers(dest="command", required=True)
     freeze = commands.add_parser("freeze")
     freeze.add_argument("--out", type=Path, required=True)
+    freeze.add_argument(
+        "--tasks",
+        default="supplygym@2,supplygym-fresh@2,supplygym-cala@2",
+    )
     run = commands.add_parser("run")
     run.add_argument("--manifest", type=Path, required=True)
     run.add_argument("--split", choices=("dev", "heldout"), required=True)
@@ -412,7 +429,10 @@ async def main() -> None:
         print(json.dumps(await audit_report(args.report), indent=2))
         return
     if args.command == "freeze":
-        suite = await freeze_suite()
+        selected = TypeAdapter(tuple[TaskRef, ...]).validate_python(
+            tuple(item for item in args.tasks.split(",") if item)
+        )
+        suite = await freeze_suite(selected)
         with args.out.open("x", encoding="utf-8") as stream:
             stream.write(suite.model_dump_json(indent=2) + "\n")
         print(f"Frozen {len(suite.scenarios)} scenarios in {args.out}")

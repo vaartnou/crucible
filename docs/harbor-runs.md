@@ -14,7 +14,11 @@ harbor run -p runs/oncall-export -a nop -n 2
 
 Each task has a distinct private salt and separate grade and solution tokens. Keep exports private. Do not rebuild an export between paired model/reference trials: the salt defines the world as well as the seed.
 
-Harbor 0.26 reads `reward.json` as named numeric rewards. Crucible writes `reward` as the primary reward and `impact`, `verified`, `diagnosis`, `penalty` as diagnostics. Harbor's primary-reward selection recognizes the `reward` key. The full score and action transcript remain in `grade.json` and `transcript.json`.
+New exports write one finite score between 0 and 1 to `/logs/verifier/reward.txt`,
+as required by the challenge. The reward formula is unchanged. The `impact`, `verified`,
+`diagnosis`, and `penalty` diagnostics remain in `grade.json`, with the action transcript
+in `transcript.json`. Historical exports used `reward.json`; regenerate exports to use
+the new format. Harbor supports both formats; see the [verifier documentation](https://docs.harborframework.com/tasks/verifier).
 
 The oracle invokes `/autoplay` with a solution-only token; it runs the reference in process and records public tool actions. This removes per-trial network installation of the engine. Live MCP tests separately exercise the model-facing protocol.
 

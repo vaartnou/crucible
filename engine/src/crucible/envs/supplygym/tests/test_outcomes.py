@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from crucible.core.episode import InfraError
+from crucible.core.episode import InfraError, run_episode
 from crucible.core.jobs import Job
 from crucible.core.registry import get_policy, get_task
 from crucible.core.session import EpisodeSession
@@ -17,7 +17,7 @@ from crucible.core.transcript import TranscriptWriter, read_transcript
 from crucible.envs.supplygym import scenarios
 from crucible.envs.supplygym.outcomes import RUBRIC, RUBRIC_HASH, OutcomeTask, grade_outcomes
 from crucible.envs.supplygym.play import Play
-from crucible.envs.supplygym.policies import baselines
+from crucible.envs.supplygym.policies import baselines, reference
 from crucible.envs.supplygym.policies.reference import Decider, make_decider
 from crucible.envs.supplygym.scenarios import Scenario, Suite, aggregate, digest, snapshot
 
@@ -298,9 +298,8 @@ async def test_cala_upper_bound_is_fixed_and_grading_is_read_only(salt: str) -> 
     task = get_task("supplygym-cala@3")
     await task.reset(1000, salt=salt)
     assert isinstance(task, OutcomeTask)
-    play = task._play  # pyright: ignore[reportPrivateUsage]
-    assert play is not None
-    expected = surplus_upper_bound(play) / 100
+    initial_play = Play(1000, 2, salt)
+    expected = surplus_upper_bound(initial_play) / 100
     initial = snapshot(task)
     assert expected > 0
     assert (await task.grade()).total == 0
@@ -311,23 +310,256 @@ async def test_cala_upper_bound_is_fixed_and_grading_is_read_only(salt: str) -> 
     score = await task.grade()
     assert score.flags["completed"]
     assert score.breakdown["surplus_upper_bound"] == expected
-    assert score.breakdown["operating_surplus"] <= expected
+    assert score.breakdown["terminal_surplus"] <= expected
+    floor = score.breakdown["surplus_floor"]
     assert score.total == pytest.approx(
-        max(0, min(1, score.breakdown["operating_surplus"] / expected))
+        max(0, min(1, (score.breakdown["adjusted_surplus"] - floor) / (expected - floor)))
     )
+    assert score.total < 0.3
     assert snapshot(task) == before
     assert await task.grade() == score
 
 
-async def test_cala_v3_reference_avoids_ppo(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_cala_v3_reference_never_loads_ppo(monkeypatch: pytest.MonkeyPatch) -> None:
     selected: list[str] = []
 
     def capture(name: str) -> Decider:
         selected.append(name)
         return make_decider(name)
 
+    def reject_checkpoint(*args: Any, **kwargs: Any) -> None:
+        raise AssertionError("Cala @3 must not construct a PPO policy")
+
+    monkeypatch.setattr(reference, "PpoDecider", reject_checkpoint)
     monkeypatch.setattr(baselines, "make_decider", capture)
     task = get_task("supplygym-cala@3")
+    observation = await task.reset(1000)
     policy = get_policy("reference", task.spec.ref)
     await policy.reset(task.spec, task.tools(), task.instruction())
-    assert selected == ["availability"]
+    while not task.done():
+        action = await policy.act(observation)
+        assert action is not None
+        result = await task.step(action)
+        assert result.ok
+        observation = Observation(last_result=result)
+    assert (await task.grade()).total > 0
+    assert selected == ["service_availability"]
+
+
+@pytest.mark.parametrize(
+    "opening_onhand,opening_pipeline", [(0, 100000), (100000, 0), (50000, 50000)]
+)
+def test_terminal_certificate_counts_prepaid_units_once(
+    opening_onhand: int,
+    opening_pipeline: int,
+) -> None:
+    from crucible.envs.supplygym.cala_upper_bound import surplus_upper_bound
+    from crucible.envs.supplygym.sim import TERMINAL_VALUE
+
+    play = Play(1000, 2)
+    env: Any = play.env
+    env.onhand = opening_onhand
+    # This prepaid shipment never arrives during the year but retains salvage value.
+    env.orders = [
+        {
+            "sup": 0,
+            "arr": 1000,
+            "nom": 1000,
+            "rev": 0,
+            "qty": opening_pipeline,
+            "ordered": opening_pipeline,
+        }
+    ]
+    bound = surplus_upper_bound(play)
+    demand = sum(int(value) for value in env.tape.demand[: env.horizon])
+    assert bound == 490 * demand + 1010 * (opening_onhand + opening_pipeline)
+    # The full simulator must obey the *unclipped* dollar certificate.
+    for _ in range(53):
+        play.apply({})
+    terminal = TERMINAL_VALUE * (env.onhand + sum(order["qty"] for order in env.orders))
+    operating = grade_outcomes(play).breakdown["operating_surplus"]
+    assert operating + terminal <= bound / 100
+    with pytest.raises(ValueError, match="reset"):
+        surplus_upper_bound(play)
+
+
+async def test_v3_floor_is_salted_deterministic_and_does_not_leak() -> None:
+    floors: list[float] = []
+    for salt in ["", "private-salt", "private-salt"]:
+        task = get_task("supplygym-cala@3")
+        observation = await task.reset(1000, salt=salt)
+        score = await task.grade()
+        floors.append(score.breakdown["surplus_floor"])
+        assert score.total == 0.0
+        assert "surplus_floor" not in observation.model_dump_json()
+        assert "surplus_upper_bound" not in observation.model_dump_json()
+        assert isinstance(task, OutcomeTask)
+        before = snapshot(task)
+        for _ in range(120):
+            if task.done():
+                break
+            await task.step(ToolCall(name="get_status"))
+        assert (await task.grade()).total == 0.0
+        assert snapshot(task)["day"] == before["day"] == 0
+    assert floors[0] != floors[1]
+    assert floors[1] == floors[2]
+
+
+@pytest.mark.parametrize("weeks", [1, 26, 52])
+async def test_v3_incomplete_and_early_completion_stay_zero(weeks: int) -> None:
+    task = get_task("supplygym-cala@3")
+    await task.reset(1000)
+    for _ in range(weeks):
+        assert (await task.step(ToolCall(name="set_controls"))).ok
+    assert (await task.grade()).total == 0.0
+    assert not (await task.step(ToolCall(name="finish"))).ok
+    assert not task.done()
+    assert (await task.grade()).total == 0.0
+
+
+@pytest.mark.parametrize("task_ref", ["supplygym@1", "supplygym@2", "supplygym-cala@3"])
+@pytest.mark.parametrize(
+    "bad_args",
+    [
+        {"expedite_share": 0.2},
+        {"replenishment_rule": "base_stock"},
+        {"safety_stock_days": float("nan")},
+        {"order_multiplier": float("inf")},
+    ],
+)
+async def test_unknown_keys_and_non_finite_controls_return_validation_error(
+    task_ref: str,
+    bad_args: dict[str, Any],
+) -> None:
+    task = get_task(task_ref)
+    await task.reset(1000)
+    before = (await task.step(ToolCall(name="get_status"))).content
+    result = await task.step(ToolCall(name="set_controls", args=bad_args))
+    assert not result.ok
+    assert result.error is not None and "set_controls" in result.error
+    assert not (await task.step(ToolCall(name="get_status", args={"unexpected": 1}))).ok
+    assert (await task.step(ToolCall(name="get_status"))).content == before
+
+
+async def test_cala_v3_step_budget_instruction_and_finish_removal(tmp_path: Path) -> None:
+    assert get_task("supplygym-cala@2").spec.max_steps == 120
+    task = get_task("supplygym-cala@3")
+    assert task.spec.max_steps == 200
+    assert {tool.name for tool in task.tools()} == {"get_briefing", "get_status", "set_controls"}
+    instruction = task.instruction()
+    assert "200 tool calls" in instruction
+    assert "episode_over" in instruction
+    assert "redundant get_status calls" in instruction
+    assert ", finish." not in instruction
+
+    session = EpisodeSession(task, 1000, TranscriptWriter(tmp_path / "react.jsonl"))
+    await session.start(policy_name="react", job=Job(task=task.spec.ref, policy="react", seed=1000))
+    refused_finish = await session.step(ToolCall(name="finish", args={}))
+    assert not refused_finish.ok
+    assert not task.done()
+    assert (await session.step(ToolCall(name="get_briefing", args={}))).ok
+    # Simulate a chatty ReAct loop (>120 total tool calls across 53 weeks).
+    for _ in range(25):
+        assert not (await session.step(ToolCall(name="set_controls", args={"typo_key": 1}))).ok
+    for _ in range(53):
+        assert (await session.step(ToolCall(name="get_status", args={}))).ok
+        assert (await session.step(ToolCall(name="set_controls", args={}))).ok
+    assert session.steps_used == 1 + 1 + 25 + 106 > 120
+    reason, score = await session.close()
+    assert reason == "task_done"
+    assert score.flags["completed"]
+    assert score.total > 0.0
+
+
+@pytest.mark.parametrize("policy_name", ["do_nothing", "stop_early"])
+async def test_cala_v3_do_nothing_and_stop_early_score_zero(
+    policy_name: str,
+    tmp_path: Path,
+) -> None:
+    task = get_task("supplygym-cala@3")
+    policy = get_policy(policy_name, task.spec.ref)
+    path = tmp_path / f"{policy_name}.jsonl"
+    result = await run_episode(
+        task,
+        policy,
+        1000,
+        job=Job(task=task.spec.ref, policy=policy_name, seed=1000),
+        writer=TranscriptWriter(path),
+    )
+    trace = read_transcript(path)
+    assert result.stop_reason == "policy_stop"
+    assert result.score.total == 0.0
+    assert not result.score.flags["completed"]
+    assert all(step.result.ok for step in trace.steps)
+    if policy_name == "stop_early":
+        assert result.score.breakdown["weeks_played"] == 4
+
+
+async def test_status_exposes_operating_surplus_alongside_terminal_profit() -> None:
+    task = get_task("supplygym-cala@3")
+    await task.reset(1000)
+    initial_status = await task.step(ToolCall(name="get_status"))
+    assert initial_status.ok and isinstance(initial_status.content, dict)
+    assert initial_status.content["operating_surplus_so_far"] == 0.0
+    assert initial_status.content["profit_so_far"] == 0.0
+
+    last_step = None
+    for _ in range(53):
+        last_step = await task.step(ToolCall(name="set_controls", args={}))
+        assert last_step.ok
+    assert last_step is not None and isinstance(last_step.content, dict)
+    status = last_step.content["status"]
+    last_week = last_step.content["last_week"]
+    assert isinstance(status, dict) and isinstance(last_week, dict)
+    score = await task.grade()
+    profit_so_far = status["profit_so_far"]
+    surplus_so_far = status["operating_surplus_so_far"]
+    week_profit = last_week["profit"]
+    week_surplus = last_week["operating_surplus"]
+    assert isinstance(profit_so_far, (int, float)) and isinstance(surplus_so_far, (int, float))
+    assert isinstance(week_profit, (int, float)) and isinstance(week_surplus, (int, float))
+    assert surplus_so_far == pytest.approx(score.breakdown["operating_surplus"], abs=1e-5)
+    # At horizon, profit_so_far credits terminal stock while operating_surplus_so_far does not.
+    assert profit_so_far > surplus_so_far
+    assert week_profit > week_surplus
+
+
+def test_frozen_v2_manifests_retain_step_budget() -> None:
+    configs_dir = Path(__file__).resolve().parents[6] / "configs"
+    for manifest_name in ("supplygym-outcomes-v1.json", "supplygym-formula-comparison-v1.json"):
+        suite_v2 = Suite.model_validate_json(
+            (configs_dir / manifest_name).read_text(encoding="utf-8")
+        )
+        assert suite_v2.max_steps == 120
+
+
+async def test_scenarios_support_cala_v3(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    task = get_task("supplygym-cala@3")
+    assert isinstance(task, OutcomeTask)
+    await task.reset(1000)
+    item = Scenario(
+        id="dev-cala-v3-1000",
+        task="supplygym-cala@3",
+        split="dev",
+        seed=1000,
+        weight=1.0,
+        scoring_hash=task.scoring_hash,
+        initial_state_hash=digest(snapshot(task)),
+    )
+    suite = Suite(
+        name="cala-v3-test",
+        source_hash="source",
+        rubric=RUBRIC.model_dump(),
+        max_steps=200,
+        scenarios=(item,),
+    )
+    monkeypatch.setattr(scenarios, "source_digest", lambda: "source")
+    report = await scenarios.run_suite(suite, "dev", "stop_early", tmp_path / "stop_early")
+    assert report["overall_score"] == 0.0
+    assert report["telemetry"]["invalid_actions"] == 0
+    assert (await scenarios.audit_report(tmp_path / "stop_early" / "report.json"))[
+        "overall_score"
+    ] == 0.0

@@ -66,6 +66,10 @@ match an available world. Rewards are not recomputed with rounded physics.
 
 ## Demo
 
+![Saved-world agent and runbook comparison](images/oncall-overlap-demo.png)
+
+The screenshot shows the first Flash world (0.7336 versus runbook 0.9005), not batch means.
+
 ```sh
 cd web && npm ci && npm run build && cd ..
 uv run --directory engine crucible ui --jobs-dir ../runs/harbor-jobs --exports-dir ../runs

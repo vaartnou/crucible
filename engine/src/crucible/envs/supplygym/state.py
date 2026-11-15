@@ -15,6 +15,7 @@ from crucible.envs.supplygym.sim import ACT_DIM, N_DIRECT, REGIONS, SupplyEnv
 
 SIGNAL_DAYS = 21
 ALT_IDS = ("A01", "A02")
+_COST_KEYS = ("purchase", "holding", "stockout", "expedite", "switching")
 _R = 6
 
 
@@ -92,6 +93,7 @@ def build_status(
             "rumors_medium": med,
         }
     s_lvl, _ = env.levels(list(act), 0)
+    operating_surplus = env.tot["revenue"] - sum(env.tot[k] for k in _COST_KEYS)
     out = {
         "day": d,
         "weeks_left": max(0, math.ceil((env.horizon - d) / env.k)),
@@ -103,6 +105,7 @@ def build_status(
         "signals": [s for s in signals if d - s["day"] <= SIGNAL_DAYS],
         "controls": status_controls(env),
         "profit_so_far": _r(env.tot["profit"]),
+        "operating_surplus_so_far": _r(operating_surplus),
     }
     if ledger is not None:
         out["last_week"] = ledger
