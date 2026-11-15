@@ -44,6 +44,15 @@ uv run crucible policies --task oncall@1
 uv run crucible eval --task oncall@1 --policy reference --seeds 0-9
 ```
 
+Compare saved runs with paired bootstrap intervals, win rates and an exact sign test:
+
+```sh
+uv run python -m crucible.gap_proof --runs runs/experiment --task incident@1 --agents reference,do_nothing --seeds 0-24
+```
+
+See the [gap-proof protocol](../docs/gap-proof.md) for the stopping rule, CSV schema,
+hard-seed subsets and normalized gap diagnostic.
+
 ## Server
 
 `crucible serve` runs the HTTP server. It reads its settings from the environment.
