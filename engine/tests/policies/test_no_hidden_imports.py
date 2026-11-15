@@ -49,7 +49,7 @@ def test_generic_policies_import_no_env() -> None:
 
 
 def test_env_names_found() -> None:
-    assert {"guess", "incident"} <= set(ENV_NAMES)
+    assert "oncall" in ENV_NAMES
 
 
 @pytest.mark.parametrize("env", ENV_NAMES)
@@ -60,6 +60,6 @@ def test_env_policies_import_only_own_policies(env: str) -> None:
 def test_check_catches_a_hidden_import() -> None:
     assert not _allowed("crucible.envs.incident.world", "incident")
     assert not _allowed("crucible.envs.incident.task", "incident")
-    assert not _allowed("crucible.envs.guess.policies.reference", "incident")
+    assert not _allowed("crucible.envs.other.policies.reference", "incident")
     assert not _allowed("crucible.envs.incident.policies", None)
     assert _allowed("crucible.envs.incident.policies.views", "incident")

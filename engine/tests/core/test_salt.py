@@ -10,7 +10,6 @@ from crucible.core.registry import get_task
 from crucible.core.session import EpisodeSession
 from crucible.core.tools import ToolCall
 from crucible.core.transcript import TranscriptWriter, read_transcript
-from crucible.envs.incident.world import make_world
 from crucible.server.settings import Settings
 
 SEEDS = range(20)
@@ -40,21 +39,24 @@ def test_guess_salt_changes_the_world() -> None:
         assert _guess_answers(seed, "salt-a") == _guess_answers(seed, "salt-a")
 
 
-def test_incident_salt_changes_the_world() -> None:
-    for seed in SEEDS:
-        assert make_world(seed, None) == make_world(seed)
-        assert make_world(seed, "salt-a") == make_world(seed, "salt-a")
-        assert make_world(seed, "salt-a") != make_world(seed), seed
-        assert make_world(seed, "salt-a") != make_world(seed, "salt-b"), seed
-
-
 def test_session_passes_the_salt_and_marks_the_header(tmp_path: Path) -> None:
     async def first_answers(salt: str | None, path: Path) -> object:
-        session = EpisodeSession(get_task("incident@1"), 3, TranscriptWriter(path), salt=salt)
-        await session.start(policy_name="p", job=Job(task="incident@1", policy="p", seed=3))
-        result = await session.step(ToolCall(name="list_deploys", args={}))
+        session = EpisodeSession(get_task("guess@1"), 3, TranscriptWriter(path), salt=salt)
+        await session.start(policy_name="p", job=Job(task="guess@1", policy="p", seed=3))
+        answers: list[object] = []
+        low, high = 1, 100
+        while low <= high:
+            n = (low + high) // 2
+            result = await session.step(ToolCall(name="guess", args={"n": n}))
+            answers.append(result.content)
+            if result.content == "correct":
+                break
+            if result.content == "higher":
+                low = n + 1
+            else:
+                high = n - 1
         await session.close()
-        return result.content
+        return answers
 
     plain = asyncio.run(first_answers(None, tmp_path / "plain.jsonl"))
     salted = asyncio.run(first_answers("secret-salt", tmp_path / "salted.jsonl"))

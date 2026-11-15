@@ -6,11 +6,11 @@ from crucible.core.executor import LocalExecutor
 from crucible.core.jobs import RunSpec, expand
 from crucible.core.transcript import TIME_FIELDS, read_transcript
 
-POLICIES = ["reference", "do_nothing", "stop_early", "shotgun"]
+POLICIES = ["reference", "do_nothing"]
 JOBS = [
     job
     for policy in POLICIES
-    for job in expand(RunSpec(task="incident@1", policy=policy, seeds=list(range(10))))
+    for job in expand(RunSpec(task="guess@1", policy=policy, seeds=list(range(10))))
 ]
 
 

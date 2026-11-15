@@ -14,8 +14,8 @@ from crucible.core.transcript import TIME_FIELDS, read_transcript
 from crucible.server.app import create_app
 from crucible.server.settings import Settings
 
-TASK = "incident@1"
-POLICIES = ["reference", "do_nothing", "stop_early", "shotgun"]
+TASK = "guess@1"
+POLICIES = ["reference", "do_nothing"]
 
 
 @pytest.mark.parametrize("policy_name", POLICIES)

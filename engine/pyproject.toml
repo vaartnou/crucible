@@ -24,8 +24,7 @@ crucible = "crucible:main"
 
 # Environments. A plugin package registers its own under the same group.
 [project.entry-points."crucible.envs"]
-guess = "crucible.envs.guess"
-incident = "crucible.envs.incident"
+oncall = "crucible.envs.oncall"
 supplygym = "crucible.envs.supplygym"
 
 [build-system]

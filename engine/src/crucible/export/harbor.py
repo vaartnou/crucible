@@ -2,7 +2,7 @@
 
 Each folder holds the agent's container (no engine in it), a simulator sidecar that installs the
 engine from a vendored wheel, a verifier that reads `/grade` with a per-task token, and an oracle
-`solve.sh` that plays a scripted policy over MCP. See `docs/decisions.md` for why.
+`solve.sh` that invokes a token-protected in-process policy. See `docs/decisions.md` for why.
 """
 
 import hashlib
@@ -16,7 +16,7 @@ from importlib.resources import files
 from importlib.resources.abc import Traversable
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, JsonValue
 
 from crucible.core.registry import get_task
 from crucible.core.task import TaskSpec
@@ -203,6 +203,11 @@ def export_harbor(
     templates = _template_files()
 
     _prepare_out(out, force)
+    dockerfile = files("crucible.export") / "templates/harbor/environment/mcp-server/Dockerfile"
+    image_hash = hashlib.sha256(
+        wheel_bytes + artifacts.requirements.read_bytes() + dockerfile.read_bytes()
+    ).hexdigest()
+    sidecar_image = f"crucible-sidecar:{image_hash[:24]}"
     folders: list[Path] = []
     for seed in seeds:
         folder = out / task_folder_name(ref, seed)
@@ -217,6 +222,8 @@ def export_harbor(
             "ENGINE_VERSION": engine_version,
             "GIT_COMMIT": commit,
             "GRADE_TOKEN": token_factory(),
+            "SOLUTION_TOKEN": secrets.token_hex(32),
+            "SIDECAR_IMAGE": sidecar_image,
             "SIDECAR_SALT": salt_factory(),
             "SOLUTION_POLICY": solution_policy,
             "INSTRUCTION": instruction,
@@ -229,20 +236,27 @@ def export_harbor(
             target.write_text(_render(resource.read_text(), values))
             if rel in _EXECUTABLE:
                 target.chmod(0o755)
-        for vendor in ("environment/mcp-server", "solution"):
+        for vendor in ("environment/mcp-server",):
             shutil.copyfile(artifacts.wheel, folder / vendor / artifacts.wheel.name)
             shutil.copyfile(artifacts.requirements, folder / vendor / "requirements.txt")
         folders.append(folder)
 
-    manifest = {
+    manifest: dict[str, JsonValue] = {
         "task_ref": ref,
         "seeds": list(seeds),
         "solution_policy": solution_policy,
         "engine_version": engine_version,
         "git_commit": commit,
         "wheel": artifacts.wheel.name,
+        "sidecar_image": sidecar_image,
         "wheel_sha256": hashlib.sha256(wheel_bytes).hexdigest(),
         "tasks": [f.name for f in folders],
     }
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    build = out / "build-sidecar.sh"
+    build.write_text(
+        '#!/bin/sh\nset -eu\ncd "$(dirname "$0")"\n'
+        f"docker build -t {sidecar_image} ./{folders[0].name}/environment/mcp-server\n"
+    )
+    build.chmod(0o755)
     return folders

@@ -14,13 +14,13 @@ from crucible.cli import app
 from crucible.core import registry
 from crucible.core.registry import get_task, register_task
 from crucible.core.task import TaskSpec
-from crucible.envs.guess.task import GuessNumber
 from crucible.export.harbor import (
     EngineArtifacts,
     ExportError,
     export_harbor,
     task_folder_name,
 )
+from tests.fixtures.guess.task import GuessNumber
 
 WHEEL = "crucible-0.1.0-py3-none-any.whl"
 FILES = {
@@ -32,8 +32,6 @@ FILES = {
     f"environment/mcp-server/{WHEEL}",
     "environment/mcp-server/requirements.txt",
     "solution/solve.sh",
-    f"solution/{WHEEL}",
-    "solution/requirements.txt",
     "tests/test.sh",
 }
 
@@ -56,7 +54,7 @@ def _export(
     out: Path,
     artifacts: EngineArtifacts,
     seeds: list[int],
-    task_ref: str = "incident@1",
+    task_ref: str = "guess@1",
     **kw: object,
 ) -> list[Path]:
     counter = _tokens()
@@ -82,12 +80,13 @@ def _token(folder: Path) -> str:
 
 def test_layout(tmp_path: Path, artifacts: EngineArtifacts) -> None:
     folders = _export(tmp_path / "out", artifacts, [0, 1, 7])
-    assert [f.name for f in folders] == [task_folder_name("incident@1", s) for s in (0, 1, 7)]
+    assert [f.name for f in folders] == [task_folder_name("guess@1", s) for s in (0, 1, 7)]
     assert {p.name for p in (tmp_path / "out").iterdir()} == {
-        "incident-1-seed-0",
-        "incident-1-seed-1",
-        "incident-1-seed-7",
+        "guess-1-seed-0",
+        "guess-1-seed-1",
+        "guess-1-seed-7",
         "manifest.json",
+        "build-sidecar.sh",
     }
     for folder in folders:
         assert _files(folder) == FILES
@@ -101,9 +100,9 @@ def test_layout(tmp_path: Path, artifacts: EngineArtifacts) -> None:
 def test_task_toml_and_compose(tmp_path: Path, artifacts: EngineArtifacts) -> None:
     (folder,) = _export(tmp_path / "out", artifacts, [5])
     config = tomllib.loads((folder / "task.toml").read_text())
-    assert config["task"]["name"] == "crucible/incident-1-seed-5"
+    assert config["task"]["name"] == "crucible/guess-1-seed-5"
     assert config["metadata"] == {
-        "task_ref": "incident@1",
+        "task_ref": "guess@1",
         "seed": 5,
         "engine_version": "0.1.0",
         "git_commit": "abc123",
@@ -112,19 +111,21 @@ def test_task_toml_and_compose(tmp_path: Path, artifacts: EngineArtifacts) -> No
     (server,) = config["environment"]["mcp_servers"]
     assert server["url"] == "http://mcp-server:8000/mcp"
     assert config["environment"]["env"] == {}
-    assert config["solution"]["env"] == {"CRUCIBLE_POLICY": "reference"}
+    assert config["solution"]["env"]["CRUCIBLE_POLICY"] == "reference"
+    assert len(config["solution"]["env"]["SOLUTION_TOKEN"]) == 64
+    assert config["schema_version"] == "1.4"
 
     compose = yaml.safe_load((folder / "environment/docker-compose.yaml").read_text())
     assert server["name"] in compose["services"]
     env = compose["services"]["mcp-server"]["environment"]
     assert env["MODE"] == "sidecar"
-    assert env["SIDECAR_TASK"] == "incident@1"
+    assert env["SIDECAR_TASK"] == "guess@1"
     assert env["SIDECAR_SEED"] == "5"
     assert env["GRADE_TOKEN"] == _token(folder)
     assert "environment" not in compose["services"]["main"]
 
 
-@pytest.mark.parametrize("task_ref", ["incident@1", "guess@1"])
+@pytest.mark.parametrize("task_ref", ["guess@1"])
 def test_metadata_comes_from_the_spec(
     tmp_path: Path, artifacts: EngineArtifacts, task_ref: str
 ) -> None:
@@ -245,7 +246,7 @@ def test_tokens_stay_with_sidecar_and_verifier(tmp_path: Path, artifacts: Engine
 def test_agent_side_has_no_engine_or_secrets(tmp_path: Path, artifacts: EngineArtifacts) -> None:
     (folder,) = _export(tmp_path / "out", artifacts, [3])
     instruction = (folder / "instruction.md").read_text()
-    assert get_task("incident@1").instruction().strip() in instruction
+    assert get_task("guess@1").instruction().strip() in instruction
     for leak in ("/grade", "GRADE_TOKEN", "seed", "SIDECAR"):
         assert leak not in instruction
     main = (folder / "environment/Dockerfile").read_text()
@@ -260,7 +261,7 @@ def test_manifest(tmp_path: Path, artifacts: EngineArtifacts) -> None:
     assert manifest["solution_policy"] == "stop_early"
     assert manifest["wheel"] == WHEEL
     assert len(manifest["wheel_sha256"]) == 64
-    folder = tmp_path / "out" / "incident-1-seed-2"
+    folder = tmp_path / "out" / "guess-1-seed-2"
     config = tomllib.loads((folder / "task.toml").read_text())
     assert config["solution"]["env"]["CRUCIBLE_POLICY"] == "stop_early"
 
@@ -271,7 +272,11 @@ def test_non_empty_out_needs_force(tmp_path: Path, artifacts: EngineArtifacts) -
     with pytest.raises(ExportError, match="not empty"):
         _export(out, artifacts, [0])
     _export(out, artifacts, [4], force=True)
-    assert {p.name for p in out.iterdir()} == {"incident-1-seed-4", "manifest.json"}
+    assert {p.name for p in out.iterdir()} == {
+        "guess-1-seed-4",
+        "manifest.json",
+        "build-sidecar.sh",
+    }
 
 
 @pytest.mark.parametrize("seeds", [[], [1, 1]])
@@ -283,12 +288,12 @@ def test_bad_seeds(tmp_path: Path, artifacts: EngineArtifacts, seeds: list[int])
 
 def test_cli(tmp_path: Path, artifacts: EngineArtifacts) -> None:
     out = tmp_path / "out"
-    args = ["export", "harbor", "--task", "incident@1", "--out", str(out), "--seeds", "0-2"]
+    args = ["export", "harbor", "--task", "guess@1", "--out", str(out), "--seeds", "0-2"]
     prebuilt = ["--wheel", str(artifacts.wheel), "--requirements", str(artifacts.requirements)]
     result = CliRunner().invoke(app, [*args, *prebuilt])
     assert result.exit_code == 0, result.output
     assert "harbor run -p" in result.output
-    assert len(list(out.glob("incident-1-seed-*"))) == 3
+    assert len(list(out.glob("guess-1-seed-*"))) == 3
 
     again = CliRunner().invoke(app, [*args, *prebuilt])
     assert again.exit_code == 2
@@ -300,7 +305,54 @@ def test_cli(tmp_path: Path, artifacts: EngineArtifacts) -> None:
     unknown = CliRunner().invoke(app, [*args, *prebuilt, "--force", "--solution-policy", "nope"])
     assert unknown.exit_code == 2
 
-    no_task = [a for a in args if a not in ("--task", "incident@1")]
+    no_task = [a for a in args if a not in ("--task", "guess@1")]
     missing = CliRunner().invoke(app, [*no_task, *prebuilt, "--force"])
     assert missing.exit_code == 2
     assert "Missing option '--task'" in click.unstyle(missing.output)
+
+
+def test_shared_image_and_oracle_secrets(tmp_path: Path, artifacts: EngineArtifacts) -> None:
+    folders = _export(tmp_path / "out", artifacts, [0, 1])
+    images: set[str] = set()
+    for folder in folders:
+        config = tomllib.loads((folder / "task.toml").read_text())
+        compose = yaml.safe_load((folder / "environment/docker-compose.yaml").read_text())
+        service = compose["services"]["mcp-server"]
+        images.add(service["image"])
+        assert "build" not in service and "expose" not in service
+        token = config["solution"]["env"]["SOLUTION_TOKEN"]
+        assert token == service["environment"]["SOLUTION_TOKEN"]
+        assert token != _token(folder)
+        assert token not in (folder / "instruction.md").read_text()
+        assert "uv " not in (folder / "solution/solve.sh").read_text()
+    assert len(images) == 1
+    build = (tmp_path / "out/build-sidecar.sh").read_text()
+    assert build.count("docker build") == 1
+    assert next(iter(images)) in build
+
+
+def test_harbor_lint(tmp_path: Path, artifacts: EngineArtifacts) -> None:
+    import shutil
+    import subprocess
+
+    harbor = shutil.which("harbor")
+    if harbor is None:
+        pytest.skip("Harbor CLI is not installed")
+    (folder,) = _export(tmp_path / "out", artifacts, [0])
+    result = subprocess.run(
+        [
+            harbor,
+            "lint",
+            str(folder),
+            "--select",
+            "invalid-task-config",
+            "--select",
+            "unknown-config-field",
+            "--select",
+            "invalid-task-files",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr

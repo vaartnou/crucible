@@ -2,9 +2,12 @@
 
 import asyncio
 import csv
+import json
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Protocol
+
+from pydantic import TypeAdapter
 
 from crucible.core.episode import EpisodeResult, InfraError, run_episode
 from crucible.core.jobs import Job
@@ -36,6 +39,12 @@ def _load_finished(job: Job, path: Path) -> EpisodeResult | None:
     if not path.exists():
         return None
     transcript = read_transcript(path)
+    diagnostics = path.with_suffix(".cleanup.json")
+    cleanup_errors: tuple[str, ...] = ()
+    if diagnostics.exists():
+        raw = json.loads(diagnostics.read_text())
+        errors = raw.get("cleanup_errors", [])
+        cleanup_errors = TypeAdapter(tuple[str, ...]).validate_python(errors)
     return EpisodeResult(
         job=job,
         task=transcript.header.task,
@@ -45,6 +54,7 @@ def _load_finished(job: Job, path: Path) -> EpisodeResult | None:
         steps=transcript.footer.steps,
         stop_reason=transcript.footer.stop_reason,
         transcript_path=path,
+        cleanup_errors=cleanup_errors,
     )
 
 

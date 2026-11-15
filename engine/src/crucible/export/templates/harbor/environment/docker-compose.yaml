@@ -6,17 +6,16 @@ services:
         condition: service_healthy
 
   mcp-server:
-    build:
-      context: ./mcp-server
+    image: "@@SIDECAR_IMAGE@@"
     environment:
       MODE: "sidecar"
       SIDECAR_TASK: "@@TASK_REF@@"
       SIDECAR_SEED: "@@SEED@@"
       SIDECAR_SALT: "@@SIDECAR_SALT@@"
+      SOLUTION_TOKEN: "@@SOLUTION_TOKEN@@"
+      SOLUTION_POLICY: "@@SOLUTION_POLICY@@"
       GRADE_TOKEN: "@@GRADE_TOKEN@@"
       RUNS_DIR: "/tmp/runs"
-    expose:
-      - "8000"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz', timeout=2)"]
       interval: 2s

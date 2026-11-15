@@ -16,17 +16,18 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from starlette.routing import Route
 
 from crucible.core.jobs import Job
-from crucible.core.registry import get_task, list_tasks
+from crucible.core.registry import get_policy, get_task, list_tasks
 from crucible.core.scoring import Score
 from crucible.core.session import EpisodeSession
 from crucible.core.task import Task
-from crucible.core.tools import Observation, ToolCall, ToolKind, ToolResult
+from crucible.core.tools import Observation, ToolCall, ToolKind, ToolResult, result_text
 from crucible.core.transcript import StopReason, TranscriptWriter, read_transcript
 from crucible.server.logging import configure_logging
 from crucible.server.mcp import build_mcp_server
 from crucible.server.settings import Settings
 from crucible.server.spectator import Spectator
 from crucible.server.store import Entry, InMemorySessionStore, SessionStore
+from crucible.server.workbench import WorkbenchManager, add_workbench_routes
 
 
 class ToolInfo(BaseModel):
@@ -71,7 +72,8 @@ def _add_api_routes(
 ) -> None:
     """The `/v1` routes (api mode)."""
 
-    def entry_for(episode_id: str) -> Entry:
+    async def entry_for(episode_id: str) -> Entry:
+        await sessions.expire()
         entry = sessions.get(episode_id)
         if entry is None:
             raise HTTPException(404, detail="Unknown episode")
@@ -100,19 +102,27 @@ def _add_api_routes(
         path: Path = settings.runs_dir / "episodes" / f"{episode_id}.jsonl"
         session = EpisodeSession(task, body.seed, TranscriptWriter(path))
         job = Job(task=task.spec.ref, policy="external", seed=body.seed, repeat=0)
-        observation = await session.start(policy_name="external", job=job)
-        sessions.put(episode_id, Entry(session))
+        try:
+            observation = await session.start(policy_name="external", job=job)
+            instruction = task.instruction()
+            sessions.put(episode_id, Entry(session))
+        except BaseException as exc:
+            try:
+                await session.close(type(exc).__name__)
+            except Exception:
+                logger.exception("Failed to finalize episode after startup failure")
+            raise
         logger.info("episode started", extra={"episode_id": episode_id})
         return StartResponse(
             episode_id=episode_id,
-            instruction=task.instruction(),
+            instruction=instruction,
             observation=observation,
             max_steps=session.max_steps,
         )
 
     @app.post("/v1/episodes/{episode_id}/step")
     async def step(episode_id: str, call: ToolCall) -> ToolResult:  # pyright: ignore[reportUnusedFunction]
-        entry = entry_for(episode_id)
+        entry = await entry_for(episode_id)
         async with entry.lock:
             result = await entry.session.step(call)
         logger.info("step", extra={"episode_id": episode_id, "tool": call.name, "ok": result.ok})
@@ -120,7 +130,7 @@ def _add_api_routes(
 
     @app.post("/v1/episodes/{episode_id}/close")
     async def close(episode_id: str) -> CloseResponse:  # pyright: ignore[reportUnusedFunction]
-        entry = entry_for(episode_id)
+        entry = await entry_for(episode_id)
         async with entry.lock:
             reason, score = await entry.session.close()
             steps = entry.session.steps_used
@@ -137,6 +147,8 @@ class GradeResponse(BaseModel):
     steps: int
     stop_reason: StopReason
     transcript: list[dict[str, JsonValue]]
+    evidence: dict[str, JsonValue] = Field(default_factory=dict)
+    cleanup_errors: list[str] = Field(default_factory=list)
 
 
 def _add_sidecar_routes(app: FastAPI, settings: Settings, logger: logging.Logger) -> None:
@@ -166,6 +178,35 @@ def _add_sidecar_routes(app: FastAPI, settings: Settings, logger: logging.Logger
     app.state.mcp_manager = manager
     app.router.routes.append(Route("/mcp", StreamableHTTPASGIApp(manager)))
 
+    @app.post("/autoplay")
+    async def autoplay(  # pyright: ignore[reportUnusedFunction]
+        x_solution_token: Annotated[str | None, Header()] = None,
+    ) -> Response:
+        if (
+            not settings.solution_token
+            or x_solution_token is None
+            or not hmac.compare_digest(x_solution_token.encode(), settings.solution_token.encode())
+        ):
+            return JSONResponse({"error": "forbidden"}, status_code=403)
+        async with lock:
+            if session.closed or session.steps_used:
+                return JSONResponse({"error": "episode already used"}, status_code=409)
+            policy = get_policy(settings.solution_policy, task.spec.ref)
+            await policy.reset(task.spec, task.tools(), task.instruction())
+            obs = app.state.initial_observation
+            try:
+                while not task.done() and session.steps_used < session.max_steps:
+                    call = await policy.act(obs)
+                    if call is None:
+                        break
+                    result = await session.step(call)
+                    obs = Observation(text=result_text(result), last_result=result)
+                reason, score = await session.close()
+            except Exception as exc:
+                await session.close(type(exc).__name__)
+                raise
+        return JSONResponse({"reward": score.total, "stop_reason": reason})
+
     @app.get("/grade", response_model=GradeResponse)
     async def grade(  # pyright: ignore[reportUnusedFunction]
         x_grade_token: Annotated[str | None, Header()] = None,
@@ -192,6 +233,8 @@ def _add_sidecar_routes(app: FastAPI, settings: Settings, logger: logging.Logger
                 steps=steps,
                 stop_reason=reason,
                 transcript=[r.model_dump(mode="json") for r in records],
+                evidence=task.grading_evidence(),
+                cleanup_errors=list(session.cleanup_errors),
             ).model_dump(mode="json")
         )
 
@@ -209,21 +252,43 @@ def create_app(settings: Settings | None = None, store: SessionStore | None = No
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         if settings.mode != "sidecar":
-            yield
+
+            async def sweep() -> None:
+                while True:
+                    await asyncio.sleep(min(30.0, settings.session_ttl_seconds / 2))
+                    await sessions.expire()
+
+            sweeper = asyncio.create_task(sweep())
+            try:
+                yield
+            finally:
+                sweeper.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await sweeper
+                if workbench is not None:
+                    await workbench.aclose()
+                await sessions.aclose()
             return
         session: EpisodeSession = app.state.sidecar_session
         manager: StreamableHTTPSessionManager = app.state.mcp_manager
         job = Job(task=session.task.spec.ref, policy="external", seed=settings.sidecar_seed)
-        await session.start(policy_name="external", job=job)
+        error: str | None = None
         try:
+            app.state.initial_observation = await session.start(policy_name="external", job=job)
             async with manager.run():
                 yield
+        except BaseException as exc:
+            error = type(exc).__name__
+            raise
         finally:
-            # Drop a half-written transcript if nobody graded the episode.
-            if not session.closed:
-                reason, score = await session.close()
+            try:
+                reason, score = await session.close(error)
                 if app.state.spectator:
                     app.state.spectator.finalize(reason, score)
+            except Exception:
+                if error is None:
+                    raise
+                logger.exception("Failed to finalize sidecar after startup or runtime error")
 
     app = FastAPI(
         title="Crucible",
@@ -237,11 +302,13 @@ def create_app(settings: Settings | None = None, store: SessionStore | None = No
     async def healthz() -> str:  # pyright: ignore[reportUnusedFunction]
         return "ok"
 
+    workbench: WorkbenchManager | None = None
     if settings.mode == "sidecar":
         _add_sidecar_routes(app, settings, logger)
     else:
         sessions: SessionStore = store or InMemorySessionStore(settings.session_ttl_seconds)
         _add_api_routes(app, settings, sessions, logger)
+        workbench = add_workbench_routes(app, settings)
     return app
 
 
