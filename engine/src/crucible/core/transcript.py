@@ -115,6 +115,8 @@ class TranscriptWriter:
         if self._file is None:
             raise ValueError("Transcript writer is closed")
         self._file.write(record.model_dump_json() + "\n")
+        # Make live tool progress visible while keeping unfinished episodes in .tmp.
+        self._file.flush()
 
     def header(
         self,

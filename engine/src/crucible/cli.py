@@ -139,7 +139,7 @@ def tasks_command() -> None:
 
 @app.command("policies")
 def policies_command(
-    task: Annotated[str, typer.Option("--task", help="Task ref, e.g. incident@1.")],
+    task: Annotated[str, typer.Option("--task", help="Task ref, e.g. oncall@1.")],
 ) -> None:
     """List the policies available for a task."""
     try:
@@ -153,7 +153,7 @@ def policies_command(
 
 @app.command("eval")
 def eval_command(
-    task: Annotated[str, typer.Option("--task", help="Task ref, e.g. incident@1.")],
+    task: Annotated[str, typer.Option("--task", help="Task ref, e.g. oncall@1.")],
     policy: Annotated[str, typer.Option(help="Comma-separated policy names.")] = "reference",
     seeds: Annotated[str, typer.Option(help="Seeds, e.g. '0-9,12'.")] = "0-9",
     repeats: Annotated[int, typer.Option(min=1, help="Episodes per seed.")] = 1,
@@ -201,7 +201,7 @@ async def _play(
 
 @app.command("play")
 def play_command(
-    task: Annotated[str, typer.Option("--task", help="Task ref, e.g. incident@1.")],
+    task: Annotated[str, typer.Option("--task", help="Task ref, e.g. oncall@1.")],
     policy: Annotated[str, typer.Option(help="Policy name.")] = "reference",
     mcp: Annotated[str | None, typer.Option(help="MCP URL of a sidecar, e.g. .../mcp.")] = None,
     api: Annotated[str | None, typer.Option(help="Base URL of an API server.")] = None,
@@ -235,7 +235,7 @@ app.add_typer(export_app, name="export")
 
 @export_app.command("harbor")
 def export_harbor_command(
-    task: Annotated[str, typer.Option("--task", help="Task ref, e.g. incident@1.")],
+    task: Annotated[str, typer.Option("--task", help="Task ref, e.g. oncall@1.")],
     out: Annotated[Path, typer.Option(help="Output folder (a Harbor dataset folder).")],
     seeds: Annotated[str, typer.Option(help="Seeds, e.g. '0-9,12'.")] = "0-9",
     solution_policy: Annotated[
@@ -285,6 +285,7 @@ def export_harbor_command(
             _fail(str(exc))
     for folder in folders:
         typer.echo(folder)
+    typer.echo(f"Build once: {out / 'build-sidecar.sh'}")
     typer.echo(f"Run: harbor run -p {out} -a oracle")
 
 
@@ -327,3 +328,114 @@ def serve_command() -> None:
 
 
 __all__ = ["Row", "app", "summarise"]
+
+
+@app.command("regrade")
+def regrade_command(
+    folder: Annotated[Path, typer.Argument(help="Harbor job folder or Crucible transcript.")],
+    export: Annotated[
+        Path | None, typer.Option(help="Original export containing world salts.")
+    ] = None,
+    salt_env: Annotated[
+        str | None, typer.Option(help="Environment variable holding world salt.")
+    ] = None,
+    out: Annotated[Path | None, typer.Option(help="Write replay report here.")] = None,
+) -> None:
+    """Replay old actions with current scoring; flag changed observations."""
+    import os
+
+    from crucible.feedback.regrade import regrade_folder
+
+    salt = os.environ.get(salt_env) if salt_env else None
+    if salt_env and not salt:
+        _fail(f"Missing environment variable {salt_env}")
+    try:
+        rows = asyncio.run(regrade_folder(folder, export=export, salt=salt))
+    except (ValueError, OSError) as exc:
+        _fail(str(exc))
+    report = json.dumps(rows, indent=2) + "\n"
+    if out is not None:
+        out.write_text(report)
+    typer.echo(report)
+    if any(not row["comparable"] for row in rows):
+        raise typer.Exit(1)
+
+
+@app.command("agent")
+def agent_command(
+    task: Annotated[str, typer.Option("--task")],
+    model: Annotated[str, typer.Option()],
+    out: Annotated[Path, typer.Option(help="New output directory.")],
+    base_url: Annotated[str, typer.Option(help="OpenAI-compatible API base URL.")],
+    seeds: Annotated[str, typer.Option()] = "0-9",
+    concurrency: Annotated[int, typer.Option(min=1, max=32)] = 10,
+    api_key_env: Annotated[str, typer.Option()] = "OPENAI_API_KEY",
+    salt_env: Annotated[str, typer.Option()] = "CRUCIBLE_EVAL_SALT",
+) -> None:
+    """Run a salted model batch directly against the in-process tools."""
+    import os
+
+    from crucible.agents.batch import agent_batch
+
+    key, salt = os.environ.get(api_key_env), os.environ.get(salt_env)
+    if not key or not salt:
+        _fail(f"Set {api_key_env} and {salt_env}; secrets are never saved in artifacts")
+    try:
+        get_task(task)
+        rows = asyncio.run(
+            agent_batch(
+                task,
+                model,
+                parse_seeds(seeds),
+                out,
+                base_url=base_url,
+                api_key=key,
+                salt=salt,
+                concurrency=concurrency,
+            )
+        )
+    except (ValueError, KeyError, OSError) as exc:
+        _fail(str(exc))
+    typer.echo(json.dumps(rows, indent=2))
+    if any(row["error"] is not None for row in rows):
+        raise typer.Exit(1)
+
+
+@app.command("gates")
+def gates_command(
+    out: Annotated[Path, typer.Option(help="New measurement directory.")],
+    seeds: Annotated[str, typer.Option()] = "0-49",
+    salt_env: Annotated[str, typer.Option()] = "CRUCIBLE_EVAL_SALT",
+) -> None:
+    """Measure the oncall bot gates on identical salted worlds."""
+    import os
+
+    from crucible.feedback.gates import measure
+
+    salt = os.environ.get(salt_env)
+    if not salt:
+        _fail(f"Set {salt_env}")
+    try:
+        result = asyncio.run(measure(parse_seeds(seeds), salt, out))
+    except (ValueError, KeyError, OSError) as exc:
+        _fail(str(exc))
+    typer.echo(json.dumps(result, indent=2))
+    if not result["passed"]:
+        raise typer.Exit(1)
+
+
+@app.command("compare")
+def compare_command(
+    bots: Annotated[Path, typer.Option(help="Salted bot gate output directory.")],
+    agent: Annotated[Path, typer.Option(help="Ten-seed direct model output directory.")],
+) -> None:
+    """Check the paired model gap; provider failures never count as model losses."""
+    from crucible.feedback.compare import compare
+
+    try:
+        result = compare(bots, agent)
+    except (ValueError, KeyError, OSError) as exc:
+        _fail(str(exc))
+    typer.echo(json.dumps(result, indent=2))
+    if not result["passed"]:
+        raise typer.Exit(1)

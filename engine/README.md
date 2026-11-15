@@ -19,8 +19,7 @@ src/crucible/
     tests/     this environment's tests (kept out of the wheel)
 ```
 
-Built-in environments: [`incident`](src/crucible/envs/incident/README.md),
-[`guess`](src/crucible/envs/guess/README.md).
+Shipped environment: `oncall@1`. The guess task lives in `tests/fixtures/guess` only.
 
 ## Environment plugins
 
@@ -41,8 +40,8 @@ fails to import raises `EnvLoadError`, which names the entry point.
 
 ```sh
 uv run crucible tasks
-uv run crucible policies --task incident@1
-uv run crucible eval --task incident@1 --policy reference --seeds 0-9
+uv run crucible policies --task oncall@1
+uv run crucible eval --task oncall@1 --policy reference --seeds 0-9
 ```
 
 ## Server
@@ -57,7 +56,7 @@ uv run crucible eval --task incident@1 --policy reference --seeds 0-9
 | `RUNS_DIR` | `runs/server` | where transcripts are written |
 | `SESSION_TTL_SECONDS` | `3600` | idle time before an API episode is dropped |
 | `GRADE_TOKEN` | empty | required in sidecar mode; the `x-grade-token` header for `/grade` |
-| `SIDECAR_TASK` | `incident@1` | task served in sidecar mode |
+| `SIDECAR_TASK` | `oncall@1` | task served in sidecar mode |
 | `SIDECAR_SEED` | `0` | seed served in sidecar mode |
 | `SIDECAR_SALT` | unset | secret mixed into the world RNG (set per task by `export harbor`) |
 
@@ -74,8 +73,8 @@ uv run crucible serve                                            # api mode on :
 MODE=sidecar GRADE_TOKEN=secret uv run crucible serve            # sidecar mode
 
 # Play a policy against a running server; prints one JSON line.
-uv run crucible play --api http://localhost:8000 --task incident@1 --seed 0 --policy reference
-uv run crucible play --mcp http://localhost:8000/mcp --task incident@1 --policy reference   # sidecar
+uv run crucible play --api http://localhost:8000 --task oncall@1 --seed 0 --policy reference
+uv run crucible play --mcp http://localhost:8000/mcp --task oncall@1 --policy reference   # sidecar
 curl -H 'x-grade-token: secret' http://localhost:8000/grade
 ```
 
@@ -94,7 +93,7 @@ scripts/docker_smoke.sh   # build, one full /v1 episode, sidecar token check
 and vendors it into each task's sidecar and `solution/`; the agent's container gets no engine.
 
 ```sh
-uv run crucible export harbor --task incident@1 --seeds 0-9 --out ../harbor/incident-1
+uv run crucible export harbor --task oncall@1 --seeds 0-9 --out ../harbor/oncall-1
 uv run crucible export harbor ... --solution-policy stop_early   # oracle plays stop_early
 uv run crucible export harbor ... --force                        # replace a non-empty --out
 ```

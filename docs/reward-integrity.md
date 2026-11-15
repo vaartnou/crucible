@@ -4,7 +4,7 @@ An agent should earn its reward by doing the task. This page lists how Crucible 
 
 ## Protections
 
-**No engine in the agent's container.** In Harbor, the agent's container (`main`) is `ubuntu:24.04` with curl and python3. The engine runs only in the sidecar. With the simulator, an agent could replay seeds and match what it sees. Harbor uploads `solution/` (which holds the wheel) only for the oracle agent.
+**No engine in the agent's container.** In Harbor, the agent's container (`main`) is `ubuntu:24.04` with curl and python3. The engine runs only in the sidecar. With the simulator, an agent could replay seeds and match what it sees. The oracle solution contains only a curl command; it uses a separate solution token to run a public-tool policy inside the sidecar.
 
 **Token-protected `/grade`.** `GET /grade` needs the `x-grade-token` header (`hmac.compare_digest`); without it the route returns 403. The token is new for each task on each export. It is only in `[verifier.env]` and in the sidecar's environment, never in `[environment.env]`. `/grade` closes the episode, so later MCP calls get `Episode is closed`.
 
@@ -18,33 +18,14 @@ An agent should earn its reward by doing the task. This page lists how Crucible 
 
 **Generated folders stay private.** `harbor/` is gitignored, because a token in a public repo is readable by an agent with internet.
 
-## Exploit log
+## Oracle endpoint
 
-Each row is an attack, what blocks it, and the score it gets. In-process scores are means over seeds 0–99 (reference: 0.968).
+`POST /autoplay` is disabled unless `SOLUTION_TOKEN` is configured. It requires a separate constant-time checked `x-solution-token`. That token exists in the sidecar and `[solution.env]` only. The route refuses used or closed episodes, runs the configured policy through the same session step budget, and records every public tool call. The grade token cannot authorize autoplay. This is covered by HTTP integration tests; MCP policy parity remains separately tested.
 
-| Attack | Block | Score |
-|---|---|---|
-| Do nothing (`do_nothing`, Harbor `nop`) | Reward is measured against the do-nothing replay | 0.000 in process; 0.000 in Harbor (3 trials) |
-| Guess the cause after two reads (`stop_early`) | Diagnosis bonus multiplies recovered requests; no repair means nothing to multiply | 0.000 (right cause on 38 of 100 seeds, still 0) |
-| Try every repair without triage (`shotgun`) | Penalty per wrong repair and per repair in the healthy phase; side effects in the sim | 0.012 (max 0.162) |
-| Only scale, never repair (scripted `scale_only`) | Scaling eases load but repairs nothing, and costs instance-minutes | 0.000 on seeds 0–29 |
-| Repair before the fault starts | `healthy_damage` penalty; restarts cause downtime | penalty of 2000 requests per action |
-| Read the answer from alert names | Alert names never equal a root-cause string | covered by the leak test (root-cause names are hidden words) |
-| Read hidden values from error messages | Errors list only visible values (e.g. visible deploy ids) | checked by test |
-| Call `/grade` from the agent | Token required | 403 |
-| Start side episodes on `/v1` from the agent | `/v1` is off in sidecar mode | 404 |
-| Rebuild the world from the public seed | Per-task salt | world differs from the unsalted seed |
-| Invalid calls to probe state | A refused call changes nothing and takes no simulated time, but costs one of 40 calls | checked by test |
+## Network status
 
-OpenCode with Gemini used only the MCP tools in our runs. Its logs show no shell or web calls, and no mention of the grade token or `/grade`.
+The exporter removes `expose:` from compose and `EXPOSE` from the sidecar Dockerfile. Those settings caused a previous Harbor 0.26 allowlist startup failure with network namespace sharing. Removing them is preparation, **not evidence that the allowlist works**. A real Harbor 0.26 trial on 2026-11-15 passed container startup but failed both oracle and verifier because `mcp-server` could not be resolved (`curl: (6) Could not resolve host: mcp-server`). Job: `runs/harbor-jobs/oncall-network-smoke-20261115`. The external-host checks were never reached, so egress enforcement is unverified. Generated tasks retain Harbor's default network policy.
 
-## Known gap: the agent has internet
+For a Gemini trial, test `[agent] network_mode = "allowlist"` with `allowed_hosts = ["generativelanguage.googleapis.com", "mcp-server"]`. Verify that the model API and sidecar work and that an unrelated external host is blocked. Other providers require their own API hosts. Keep exports private and retain salts and separate grade/solution tokens regardless of the network result.
 
-Harbor 0.26.0 cannot restrict the agent's network for these tasks. `[agent] network_mode = "allowlist"` with `allowed_hosts` fails at startup on the sidecar with `conflicting options: port exposing and the container type network mode`. So the generated tasks set no allowlist, and the agent's shell can reach the internet.
-
-What that allows:
-
-- The agent can download this repo and the engine. Without the salt it cannot rebuild the world.
-- The agent can call any public API from the shell. Web search is off in OpenCode, but a shell `curl` is not blocked.
-
-What still holds: no engine in `main`, a new token and salt on every export, and `disable_web_search=true`. Try the allowlist again on a newer Harbor version. See [decisions.md](decisions.md).
+Old incident and fleetbase exploit scores are historical and do not validate oncall. The current oncall gate report must establish baseline, exploit, and reference scores on the same salted worlds before reporting a model gap.

@@ -14,7 +14,9 @@ TOKEN = "secret-token"
 
 
 def sidecar_settings(tmp_path: Path) -> Settings:
-    return Settings(mode="sidecar", grade_token=TOKEN, runs_dir=tmp_path, sidecar_seed=1)
+    return Settings(
+        mode="sidecar", grade_token=TOKEN, runs_dir=tmp_path, sidecar_seed=1, sidecar_task="guess@1"
+    )
 
 
 @asynccontextmanager
@@ -43,7 +45,7 @@ async def test_grade_with_token_is_idempotent(tmp_path: Path) -> None:
         assert first.status_code == 200
         body = first.json()
         assert 0.0 <= body["reward"] <= 1.0
-        assert body["task"] == "incident@1"
+        assert body["task"] == "guess@1"
         assert body["seed"] == 1
         assert body["steps"] == 0
         assert body["stop_reason"] == "policy_stop"
@@ -61,7 +63,7 @@ async def test_sidecar_has_no_v1(tmp_path: Path) -> None:
         assert (await sidecar.get("/healthz")).text == "ok"
         assert (await sidecar.get("/v1/tasks")).status_code == 404
         assert (
-            await sidecar.post("/v1/episodes", json={"task_id": "incident@1", "seed": 0})
+            await sidecar.post("/v1/episodes", json={"task_id": "guess@1", "seed": 0})
         ).status_code == 404
 
 
@@ -73,3 +75,33 @@ async def test_api_mode_has_no_grade_or_mcp(tmp_path: Path) -> None:
         assert (await c.get("/grade", headers={"x-grade-token": TOKEN})).status_code == 404
         assert (await c.post("/mcp", json={})).status_code == 404
         assert (await c.get("/v1/tasks")).status_code == 200
+
+
+async def test_autoplay_requires_separate_token_and_records_public_actions(tmp_path: Path) -> None:
+    settings = sidecar_settings(tmp_path).model_copy(
+        update={"solution_token": "oracle-secret", "sidecar_salt": "private-salt"}
+    )
+    app = create_app(settings)
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as c,
+    ):
+        for token in (None, TOKEN, "wrong"):
+            headers = {} if token is None else {"x-solution-token": token}
+            assert (await c.post("/autoplay", headers=headers)).status_code == 403
+        response = await c.post("/autoplay", headers={"x-solution-token": "oracle-secret"})
+        assert response.status_code == 200
+        assert response.json()["reward"] > 0
+        grade = (await c.get("/grade", headers={"x-grade-token": TOKEN})).json()
+        assert grade["reward"] == response.json()["reward"]
+        assert grade["steps"] > 0
+        assert grade["transcript"][0]["salted"] is True
+        assert all(record["call"]["name"] == "guess" for record in grade["transcript"][1:-1])
+        assert (
+            await c.post("/autoplay", headers={"x-solution-token": "oracle-secret"})
+        ).status_code == 409
+
+
+async def test_autoplay_disabled_without_solution_token(tmp_path: Path) -> None:
+    async with sidecar_client(tmp_path) as c:
+        assert (await c.post("/autoplay", headers={"x-solution-token": ""})).status_code == 403

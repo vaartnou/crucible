@@ -15,7 +15,9 @@ class Settings(BaseSettings):
     runs_dir: Path = Path("runs/server")
     session_ttl_seconds: int = 3600
     grade_token: str = ""
-    sidecar_task: str = "incident@1"
+    solution_token: str = ""
+    solution_policy: str = "reference"
+    sidecar_task: str = "oncall@1"
     sidecar_seed: int = 0
     sidecar_salt: str | None = None
 

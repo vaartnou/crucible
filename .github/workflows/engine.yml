@@ -30,7 +30,7 @@ jobs:
       - run: uv run ruff format --check
       - run: uv run pyright
       - run: uv run pytest
-      - run: uv run crucible eval --task incident@1 --policy reference,do_nothing,stop_early,shotgun --seeds 0-1 --concurrency 4 --out runs/ci
+      - run: uv run crucible eval --task oncall@1 --policy reference,graph_walk,do_nothing,shotgun --seeds 0-1 --concurrency 4 --out runs/ci
 
   docker:
     needs: check

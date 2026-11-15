@@ -16,11 +16,11 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from starlette.routing import Route
 
 from crucible.core.jobs import Job
-from crucible.core.registry import get_task, list_tasks
+from crucible.core.registry import get_policy, get_task, list_tasks
 from crucible.core.scoring import Score
 from crucible.core.session import EpisodeSession
 from crucible.core.task import Task
-from crucible.core.tools import Observation, ToolCall, ToolKind, ToolResult
+from crucible.core.tools import Observation, ToolCall, ToolKind, ToolResult, result_text
 from crucible.core.transcript import StopReason, TranscriptWriter, read_transcript
 from crucible.server.logging import configure_logging
 from crucible.server.mcp import build_mcp_server
@@ -163,6 +163,35 @@ def _add_sidecar_routes(app: FastAPI, settings: Settings, logger: logging.Logger
     app.state.mcp_manager = manager
     app.router.routes.append(Route("/mcp", StreamableHTTPASGIApp(manager)))
 
+    @app.post("/autoplay")
+    async def autoplay(  # pyright: ignore[reportUnusedFunction]
+        x_solution_token: Annotated[str | None, Header()] = None,
+    ) -> Response:
+        if (
+            not settings.solution_token
+            or x_solution_token is None
+            or not hmac.compare_digest(x_solution_token.encode(), settings.solution_token.encode())
+        ):
+            return JSONResponse({"error": "forbidden"}, status_code=403)
+        async with lock:
+            if session.closed or session.steps_used:
+                return JSONResponse({"error": "episode already used"}, status_code=409)
+            policy = get_policy(settings.solution_policy, task.spec.ref)
+            await policy.reset(task.spec, task.tools(), task.instruction())
+            obs = app.state.initial_observation
+            try:
+                while not task.done() and session.steps_used < session.max_steps:
+                    call = await policy.act(obs)
+                    if call is None:
+                        break
+                    result = await session.step(call)
+                    obs = Observation(text=result_text(result), last_result=result)
+                reason, score = await session.close()
+            except Exception as exc:
+                await session.close(type(exc).__name__)
+                raise
+        return JSONResponse({"reward": score.total, "stop_reason": reason})
+
     @app.get("/grade", response_model=GradeResponse)
     async def grade(  # pyright: ignore[reportUnusedFunction]
         x_grade_token: Annotated[str | None, Header()] = None,
@@ -226,7 +255,7 @@ def create_app(settings: Settings | None = None, store: SessionStore | None = No
         job = Job(task=session.task.spec.ref, policy="external", seed=settings.sidecar_seed)
         error: str | None = None
         try:
-            await session.start(policy_name="external", job=job)
+            app.state.initial_observation = await session.start(policy_name="external", job=job)
             async with manager.run():
                 yield
         except BaseException as exc:

@@ -23,10 +23,7 @@ crucible = "crucible:main"
 
 # Environments. A plugin package registers its own under the same group.
 [project.entry-points."crucible.envs"]
-backend_probe = "crucible.envs.backend_probe"
-fleetbase_dispatch = "crucible.envs.fleetbase_dispatch"
-guess = "crucible.envs.guess"
-incident = "crucible.envs.incident"
+oncall = "crucible.envs.oncall"
 
 [build-system]
 requires = ["uv_build>=0.12.18,<0.13.0"]
