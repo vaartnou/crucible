@@ -1,4 +1,7 @@
 schema_version = "1.4"
+artifacts = [
+    { source = "/tmp/verification/episode.json", service = "mcp-server" },
+]
 
 [task]
 name = "@@TASK_NAME@@"
@@ -17,10 +20,24 @@ generator = "crucible export harbor"
 timeout_sec = @@AGENT_TIMEOUT_SEC@@
 
 [verifier]
+environment_mode = "separate"
 timeout_sec = 120.0
 
 [verifier.env]
-GRADE_TOKEN = "@@GRADE_TOKEN@@"
+CRUCIBLE_VERIFY_TASK = "@@TASK_REF@@"
+CRUCIBLE_VERIFY_SEED = "@@SEED@@"
+CRUCIBLE_VERIFY_SALT = "@@SIDECAR_SALT@@"
+
+[[verifier.collect]]
+service = "mcp-server"
+command = "python -m crucible.export.collect_episode"
+timeout_sec = 90.0
+
+[verifier.environment]
+cpus = @@CPUS@@
+memory_mb = @@MEMORY_MB@@
+storage_mb = 10240
+gpus = 0
 
 [environment]
 build_timeout_sec = 900.0

@@ -34,6 +34,9 @@ FILES = {
     "environment/mcp-server/requirements.txt",
     "solution/solve.sh",
     "tests/test.sh",
+    "tests/Dockerfile",
+    f"tests/{WHEEL}",
+    "tests/requirements.txt",
 }
 
 
@@ -75,8 +78,8 @@ def _files(folder: Path) -> set[str]:
 
 
 def _token(folder: Path) -> str:
-    config = tomllib.loads((folder / "task.toml").read_text())
-    return config["verifier"]["env"]["GRADE_TOKEN"]
+    compose = yaml.safe_load((folder / "environment/docker-compose.yaml").read_text())
+    return compose["services"]["mcp-server"]["environment"]["GRADE_TOKEN"]
 
 
 def test_layout(tmp_path: Path, artifacts: EngineArtifacts) -> None:
@@ -117,6 +120,16 @@ def test_task_toml_and_compose(tmp_path: Path, artifacts: EngineArtifacts) -> No
     assert config["solution"]["env"]["CRUCIBLE_POLICY"] == "reference"
     assert len(config["solution"]["env"]["SOLUTION_TOKEN"]) == 64
     assert config["schema_version"] == "1.4"
+    assert config["verifier"]["environment_mode"] == "separate"
+    assert config["verifier"]["env"]["CRUCIBLE_VERIFY_TASK"] == "guess@1"
+    assert config["verifier"]["env"]["CRUCIBLE_VERIFY_SEED"] == "5"
+    assert config["artifacts"] == [
+        {"source": "/tmp/verification/episode.json", "service": "mcp-server"}
+    ]
+    assert config["verifier"]["collect"][0]["service"] == "mcp-server"
+    assert "collect_episode" in config["verifier"]["collect"][0]["command"]
+    assert "GRADE_TOKEN" not in config["verifier"]["env"]
+    assert (folder / f"tests/{WHEEL}").read_bytes() == artifacts.wheel.read_bytes()
 
     compose = yaml.safe_load((folder / "environment/docker-compose.yaml").read_text())
     assert server["name"] in compose["services"]
@@ -221,7 +234,7 @@ def _salt(folder: Path) -> str:
     return compose["services"]["mcp-server"]["environment"]["SIDECAR_SALT"]
 
 
-def test_salt_is_fresh_and_only_in_the_sidecar_env(
+def test_salt_is_fresh_and_only_in_sidecar_and_verifier(
     tmp_path: Path, artifacts: EngineArtifacts
 ) -> None:
     folders = _export(tmp_path / "out", artifacts, [0, 1, 2])
@@ -231,7 +244,9 @@ def test_salt_is_fresh_and_only_in_the_sidecar_env(
     manifest = (tmp_path / "out" / "manifest.json").read_text()
     for folder, salt in zip(folders, salts, strict=True):
         holders = {f for f in FILES if not f.endswith(".whl") and salt in (folder / f).read_text()}
-        assert holders == {"environment/docker-compose.yaml"}
+        assert holders == {"task.toml", "environment/docker-compose.yaml"}
+        config = tomllib.loads((folder / "task.toml").read_text())
+        assert config["verifier"]["env"]["CRUCIBLE_VERIFY_SALT"] == salt
         assert salt not in manifest
 
 
@@ -242,7 +257,7 @@ def test_tokens_stay_with_sidecar_and_verifier(tmp_path: Path, artifacts: Engine
     manifest = (tmp_path / "out" / "manifest.json").read_text()
     for folder, token in zip(folders, tokens, strict=True):
         holders = {f for f in FILES if not f.endswith(".whl") and token in (folder / f).read_text()}
-        assert holders == {"task.toml", "environment/docker-compose.yaml"}
+        assert holders == {"environment/docker-compose.yaml"}
         assert token not in manifest
 
 
@@ -353,6 +368,8 @@ def test_harbor_lint(tmp_path: Path, artifacts: EngineArtifacts) -> None:
             "unknown-config-field",
             "--select",
             "invalid-task-files",
+            "--select",
+            "shared-verifier",
         ],
         capture_output=True,
         text=True,
