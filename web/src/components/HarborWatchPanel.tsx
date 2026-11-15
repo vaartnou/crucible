@@ -30,6 +30,10 @@ export const HarborWatchPanel: React.FC<Props> = ({ containers, dockerAvailable,
         if (!cancelled) {
           setState(next);
           setExportId(current => current || next.exports[0]?.id || '');
+          if (next.allowed_models?.length) {
+            setModel(current => next.allowed_models!.includes(current) ? current : next.allowed_models![0]);
+          }
+          setConcurrency(current => Math.min(current, next.max_concurrency ?? 4));
         }
       } catch (err) {
         if (!cancelled) setError(String(err));
@@ -72,18 +76,20 @@ export const HarborWatchPanel: React.FC<Props> = ({ containers, dockerAvailable,
         </select>
       </label>
       <label className="field">Model
-        <input className="input mono" value={model} onChange={e => setModel(e.target.value)} placeholder="google/gemini-3.8-flash" />
+        {state?.allowed_models?.length ? <select className="select mono" value={model} onChange={e => setModel(e.target.value)}>
+          {state.allowed_models.map(item => <option key={item} value={item}>{item}</option>)}
+        </select> : <input className="input mono" value={model} onChange={e => setModel(e.target.value)} placeholder="google/gemini-3.8-flash" />}
       </label>
       <details className="advanced-settings"><summary>Run settings</summary>
         <label>Concurrent trials
-          <input className="input" type="number" min={1} max={4} value={concurrency} onChange={e => setConcurrency(Number(e.target.value))} />
+          <input className="input" type="number" min={1} max={state?.max_concurrency ?? 4} value={concurrency} onChange={e => setConcurrency(Number(e.target.value))} />
         </label>
         <p>Uses OpenCode 1.19.5. API credentials come from the server environment.</p>
       </details>
       {!state?.exports.length && state && <p className="muted">Prepare an oncall Harbor export in <code>{state.exports_dir}</code> first.</p>}
       {state && !state.harbor_available && <p className="muted">Install Harbor on the server to launch evaluations.</p>}
-      {!dockerAvailable && <p className="muted">Start Docker Desktop to run evaluations.{dockerError ? ` ${dockerError}` : ''}</p>}
-      <button className="btn btn-primary" disabled={busy || !!activeJob || !state?.harbor_available || !dockerAvailable || !exportId || !model.trim() || !Number.isInteger(concurrency) || concurrency < 1 || concurrency > 4} onClick={() => void launch()}>
+      {!dockerAvailable && <p className="muted">The evaluation worker cannot reach Docker.{dockerError ? ` ${dockerError}` : ''}</p>}
+      <button className="btn btn-primary" disabled={busy || !!activeJob || !state?.harbor_available || !dockerAvailable || !exportId || !model.trim() || !Number.isInteger(concurrency) || concurrency < 1 || concurrency > (state?.max_concurrency ?? 4)} onClick={() => void launch()}>
         <Play size={14} /> {busy ? 'Starting Harbor…' : activeJob ? 'Evaluation in progress' : 'Start evaluation'}
       </button>
     </div>}

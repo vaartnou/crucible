@@ -22,6 +22,7 @@ from crucible.core.session import EpisodeSession
 from crucible.core.task import Task
 from crucible.core.tools import Observation, ToolCall, ToolKind, ToolResult, result_text
 from crucible.core.transcript import StopReason, TranscriptWriter, read_transcript
+from crucible.server.harbor_worker import HarborWorkerMiddleware, validate_worker_settings
 from crucible.server.logging import configure_logging
 from crucible.server.mcp import build_mcp_server
 from crucible.server.settings import Settings
@@ -247,6 +248,7 @@ def create_app(settings: Settings | None = None, store: SessionStore | None = No
     Api mode serves `/v1`. Sidecar mode serves one episode on `/mcp` and `/grade`, no `/v1`.
     """
     settings = settings or Settings()
+    validate_worker_settings(settings)
     logger = configure_logging(settings.log_level)
     if settings.mode == "sidecar" and not settings.grade_token:
         raise ValueError("GRADE_TOKEN is required in sidecar mode")
@@ -299,6 +301,7 @@ def create_app(settings: Settings | None = None, store: SessionStore | None = No
         openapi_url=None,
         lifespan=lifespan,
     )
+    app.add_middleware(HarborWorkerMiddleware, settings=settings)
 
     @app.get("/healthz", response_class=PlainTextResponse)
     async def healthz() -> str:  # pyright: ignore[reportUnusedFunction]

@@ -28,17 +28,18 @@ if the service has an old sidecar-mode override.
 Current main runs model evaluations through Harbor + OpenCode and Docker; there is no direct
 model API runner. This Railway image supports **Play** (manual incident response), the session
 API/MCP endpoints, and built-in policy comparisons. Select **Play** after opening the demo;
-the UI initially opens Watch, which requires Harbor infrastructure.
+the UI initially opens Watch, which requires the worker described below.
 
-The image does not install Harbor, OpenCode, or a Docker daemon. Uploading a provider API key
-alone will not enable Watch launches or different-model evaluations on Railway. Those need
-a separate Docker-capable evaluation host and an authenticated integration with the demo.
-Saved Harbor transcripts can be viewed under Runs if supplied via `HARBOR_JOBS_DIR`, with
-original exports available through `HARBOR_EXPORTS_DIR` for salted-world reconstruction.
+To enable Watch launches, connect a Docker-capable worker through `HARBOR_WORKER_URL` and
+`HARBOR_WORKER_TOKEN`. The public app forwards Harbor launch/status, live trial, and saved-run
+requests to it. Human play and comparisons stay on the public app. See
+[Railway Sandbox worker setup](railway-harbor.md) for the setup script, provider credentials,
+approved models, and limits.
 
-The current routes share session listings and controls across visitors. Add access control,
-session ownership, and run/concurrency limits before exposing private or funded evaluations.
-Keep API keys on the evaluation host, never in frontend build variables or committed files.
+The normal service image does not run a Docker daemon. Railway Sandboxes include Docker, so
+the worker can remain on Railway. Provider keys stay on the worker; the shared worker token
+stays in server variables. The worker rejects unauthenticated requests and exposes only Harbor
+and saved-run routes (plus its health check). Public demo runs are shared across visitors.
 
 ## Saved transcripts
 
