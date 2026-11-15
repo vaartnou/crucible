@@ -7,5 +7,4 @@ COPY requirements.txt @@WHEEL_NAME@@ ./
 RUN pip install --no-cache-dir -r requirements.txt ./@@WHEEL_NAME@@ \
     && useradd --system --uid 10001 --no-create-home --shell /usr/sbin/nologin crucible
 USER crucible
-EXPOSE 8000
 CMD ["sh", "-c", "exec uvicorn --factory crucible.server.app:create_app --host 0.0.0.0 --port ${PORT}"]

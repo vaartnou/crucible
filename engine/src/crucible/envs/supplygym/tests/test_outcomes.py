@@ -297,8 +297,10 @@ async def test_cala_upper_bound_is_fixed_and_grading_is_read_only(salt: str) -> 
 
     task = get_task("supplygym-cala@3")
     await task.reset(1000, salt=salt)
-    assert isinstance(task, OutcomeTask) and task._play is not None
-    expected = surplus_upper_bound(task._play) / 100
+    assert isinstance(task, OutcomeTask)
+    play = task._play  # pyright: ignore[reportPrivateUsage]
+    assert play is not None
+    expected = surplus_upper_bound(play) / 100
     initial = snapshot(task)
     assert expected > 0
     assert (await task.grade()).total == 0

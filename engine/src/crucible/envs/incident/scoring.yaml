@@ -1,5 +1,0 @@
-wrong_repair_requests: 3000        # penalty per wrong repair
-healthy_damage_requests: 2000      # penalty per repair action before the fault starts
-scaling_requests_per_instance_minute: 15
-base_weight: 0.7                   # reward = recovered_frac * (base + diag * diagnosis) - penalty_frac
-diagnosis_weight: 0.3

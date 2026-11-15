@@ -1,67 +1,70 @@
 # Harbor runs
 
-Runs of the generated `incident@1` tasks (`crucible export harbor --task incident@1 --seeds 0-9`) on a laptop with local Docker. Harbor 0.26.0, OpenCode 1.19.5. The job folders are in `jobs/` (gitignored); this file keeps the scores.
+The current environment is `oncall@1`. Older incident and fleetbase results remain in git history; they do not establish an oncall difficulty claim.
 
-Date: 2026-11-14. Engine commit: `44f0dca` plus the step 7 export.
+Export and build one content-addressed sidecar image for the batch:
 
-## Summary
-
-| Agent | Model | Job | Tasks | Mean reward | Root cause correct |
-|---|---|---|---|---|---|
-| oracle (`solve.sh`, reference policy) | none | `incident-1-oracle` | 10 | 0.971 | 10/10 |
-| opencode | `google/gemini-3.8-flash` | `incident-1-opencode-gemini` | 3 | 0.955 | 3/3 |
-| nop | none | `incident-1-nop` | 3 | 0.000 | 0/3 |
-
-The oracle reward is equal to the in-process reference score (`crucible eval --task incident@1 --policy reference --seeds 0-9`) on each seed, to all printed digits. This held before exports were salted; since the per-task `SIDECAR_SALT`, a Harbor world differs from the in-process world of the same seed.
-
-## Per trial
-
-| Job | Seed | Reward | Steps | Stop reason | Root cause correct |
-|---|---|---|---|---|---|
-| incident-1-oracle | 0 | 0.935 | 8 | task_done | yes |
-| incident-1-oracle | 1 | 0.983 | 7 | task_done | yes |
-| incident-1-oracle | 2 | 0.977 | 6 | task_done | yes |
-| incident-1-oracle | 3 | 0.976 | 6 | task_done | yes |
-| incident-1-oracle | 4 | 0.977 | 6 | task_done | yes |
-| incident-1-oracle | 5 | 0.958 | 7 | task_done | yes |
-| incident-1-oracle | 6 | 0.980 | 6 | task_done | yes |
-| incident-1-oracle | 7 | 0.962 | 7 | task_done | yes |
-| incident-1-oracle | 8 | 0.981 | 7 | task_done | yes |
-| incident-1-oracle | 9 | 0.981 | 8 | task_done | yes |
-| incident-1-opencode-gemini | 0 | 0.918 | 13 | task_done | yes |
-| incident-1-opencode-gemini | 1 | 0.983 | 13 | task_done | yes |
-| incident-1-opencode-gemini | 2 | 0.965 | 10 | task_done | yes |
-| incident-1-nop | 0 | 0.000 | 0 | policy_stop | no |
-| incident-1-nop | 1 | 0.000 | 0 | policy_stop | no |
-| incident-1-nop | 2 | 0.000 | 0 | policy_stop | no |
-
-## Observations
-
-- OpenCode used only the MCP tools (`mcp-server_*`). There were no shell or web calls. The grade token and `/grade` do not appear in its logs.
-- Gemini 3.8 Flash scores close to the reference. It does not score above it: the reward is mostly set by how soon the repair starts (see `docs/decisions.md`, calibration finding), and Gemini made 3–6 more calls than the reference. With only a small gap between the reference and the model, this task cannot separate strong models well. Faults 4–6 should be harder.
-- `[agent] network_mode = "allowlist"` with `allowed_hosts` fails at startup in Harbor 0.26.0. The error is `conflicting options: port exposing and the container type network mode` on the sidecar. Job `incident-1-opencode-allowed-hosts`.
-
-## Re-run after the `crucible` rename
-
-Date: 2026-11-14. Engine: commit `0667420` plus the uncommitted rename and `envs/` move (the
-exported `task.toml` records `0667420`). Export: `crucible export harbor --task incident@1 --seeds 0-9`.
-
-| Job | Agent | Tasks | Mean reward | Root cause correct | Note |
-|---|---|---|---|---|---|
-| `crucible-incident-1-oracle` | oracle | 10 | 0.971 | 10/10 | equal to the golden reference score on every seed, all digits |
-| `crucible-incident-1-opencode-gemini` | opencode, `google/gemini-3.8-flash` | 1 (seed 0) | 0.918 | 1/1 | 12 steps, `task_done`, MCP tools only |
-
-## Commands
-
-```bash
-export PATH=$PATH:/Applications/Docker.app/Contents/Resources/bin
-uv run --directory engine crucible export harbor --task incident@1 --seeds 0-9 --out ../harbor/incident-1
-harbor run -p harbor/incident-1 -a oracle -o jobs --job-name incident-1-oracle
-harbor run -p harbor/incident-1 -a nop -o jobs --job-name incident-1-nop -l 3
-set -a; . ./.env; set +a
-harbor run -p harbor/incident-1 -a opencode -m google/gemini-3.8-flash \
-  --ak version=1.19.5 --ak disable_web_search=true \
-  --api-key-name GOOGLE_GENERATIVE_AI_API_KEY \
-  --ae GOOGLE_GENERATIVE_AI_API_KEY=$GOOGLE_GENERATIVE_AI_API_KEY \
-  -o jobs --job-name incident-1-opencode-gemini -l 3
+```sh
+uv run --directory engine crucible export harbor --task oncall@1 --seeds 0-9 --out ../runs/oncall-export
+sh runs/oncall-export/build-sidecar.sh
+harbor lint runs/oncall-export/oncall-1-seed-*
+harbor run -p runs/oncall-export -a oracle -n 2
+harbor run -p runs/oncall-export -a nop -n 2
 ```
+
+Each task has a distinct private salt and separate grade and solution tokens. Keep exports private. Do not rebuild an export between paired model/reference trials: the salt defines the world as well as the seed.
+
+Harbor 0.26 reads `reward.json` as named numeric rewards. Crucible writes `reward` as the primary reward and `impact`, `verified`, `diagnosis`, `penalty` as diagnostics. Harbor's primary-reward selection recognizes the `reward` key. The full score and action transcript remain in `grade.json` and `transcript.json`.
+
+The oracle invokes `/autoplay` with a solution-only token; it runs the reference in process and records public tool actions. This removes per-trial network installation of the engine. Live MCP tests separately exercise the model-facing protocol.
+
+Run deterministic checks and bot baselines before a model batch. All new model evaluations use Harbor with OpenCode; the former direct-model screening runner has been removed. Use [the failure rubric](oncall-failure-rubric.md) to examine both losses and model successes.
+
+Docker Desktop reported 8,317,202,432 bytes (about 7.75 GiB) on 2026-11-15. Use concurrency 2–4 at that allocation; concurrency 8 awaits an explicit host-memory change and a measured resource check.
+
+Network isolation is still an experiment; see [reward integrity](reward-integrity.md). Removing exposed-port metadata alone does not prove an allowlist is enforced.
+
+## Final optimized simulator smoke, 2026-11-15
+
+The final export includes the causal model, corrected public policies, and equivalence-tested performance changes. Fresh private salts selected these two incidents:
+
+| Seed | Incident | Oracle reward | Verified | Diagnosis | Penalty | Nop reward |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| 0 | queue_backlog | 0.7159818807383254 | 1 | 1 | 0 | 0 |
+| 1 | retry_storm | 0.612620280786114 | 1 | 1 | 0 | 0 |
+
+Oracle mean: **0.6643010807622197**. Both incidents recovered and were diagnosed correctly; queue drain and accumulated impact still cost reward. These are fresh worlds, so their scores cannot be compared directly with earlier exports. There were no trial exceptions. Oracle and nop batches each took about 14 seconds at concurrency 2.
+
+Export: `runs/oncall-harbor-optimized`. Jobs: `runs/harbor-jobs/oncall-oracle-optimized-20261115` and `runs/harbor-jobs/oncall-nop-optimized-20261115`. All four transcripts regraded to identical rewards with no observation divergence using the original export. Reports: `runs/oncall-oracle-optimized-regrade.json` and `runs/oncall-nop-optimized-regrade.json`.
+
+Wheel SHA-256: `fe561704b5c91ce89d2221d7a198a71a3d1bb7a2148cb257c9ad1ff0f18ecb34`. Shared image: `crucible-sidecar:6421cd9069ee72f0282ad85e`. These are protocol checks, not evidence of a model reasoning gap. Earlier exports below are retained for provenance.
+
+A measured optimization check on unsalted seed 14 shotgun reduced elapsed time from 33.88 seconds in the previous harness to 5.256 seconds for the CLI run (concurrent load differed). All 48 public step records and the complete score were identical. Artifact: `runs/oncall-shotgun14-perf`. Do not infer a whole-batch speedup from this one episode.
+
+## Earlier causal simulator v2 smoke, 2026-11-15
+
+After the causal fluid-model and public-policy freeze, a fresh two-seed export produced:
+
+| Agent | Trials | Mean reward | Verified | Diagnosis | Penalty | Exceptions |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| oracle | 2 | 0.9294979150299925 | 1 | 1 | 0 | 0 |
+| nop | 2 | 0 | 0 | 0 | 0 | 0 |
+
+Jobs: `runs/harbor-jobs/oncall-oracle-causal-v2-20261115` and `runs/harbor-jobs/oncall-nop-causal-v2-20261115`. Export: `runs/oncall-harbor-causal`. Each job took about 13 seconds at concurrency 2. All four transcripts replayed with the original export salt, exact score equality, and no public-observation divergence. Reports: `runs/oncall-oracle-causal-v2-regrade.json` and `runs/oncall-nop-causal-v2-regrade.json`. The replay's `comparable` flag means observation compatibility, not independent proof that unobserved state is identical.
+
+Wheel SHA-256: `9ef3bbc38f4650a7c29364b3c82f6dfcf80e084640e8ac7fe97ae0facb22c168`. Shared image: `crucible-sidecar:90a6cbf68e264c53e8700c54`. These smoke trials establish protocol and replay correctness; they are not a model difficulty measurement. No model Harbor batch was launched before the direct-model gap gate.
+
+## Superseded first-simulator smoke, 2026-11-15
+
+Two seeds (0 and 1), using the same private salts in every comparison, Harbor 0.26.0, Docker concurrency 2:
+
+| Agent | Trials | Mean reward | Verified | Diagnosis | Penalty | Exceptions |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| oracle | 2 | 0.9504025968104086 | 1 | 1 | 0 | 0 |
+| nop | 2 | 0 | 0 | 0 | 0 | 0 |
+
+All four final transcripts replayed through `crucible regrade --export runs/oncall-harbor-final` with exact score equality, `comparable=true`, and no observation divergence. Reports: `runs/oncall-oracle-final-regrade.json` and `runs/oncall-nop-final-regrade.json`. Jobs: `runs/harbor-jobs/oncall-oracle-final-20261115` and `runs/harbor-jobs/oncall-nop-final-20261115`. Export: `runs/oncall-harbor-final`; wheel SHA and source revision are in its manifest. These two smoke seeds establish wiring, not the ten-seed hardness gate. The wheel was rebuilt after the simulator freeze. Earlier `*-smoke-*` jobs used an intermediate simulator and are superseded by these `*-final-*` results. Subsequent simulator changes require a fresh export for reported scores.
+
+The allowlist trial (`oncall-network-smoke-20261115`) no longer hit the port-exposure startup error, but `mcp-server` DNS failed for oracle and verifier. That trial is an infrastructure failure, not a zero-scoring reasoning episode. External-host checks did not run. Default network access remains enabled.
+
+Frozen wheel SHA-256: `ba041e9e82eed12f864444762e6e88d10749483961e3c1dfc86f06191cab7e05`. Shared image: `crucible-sidecar:b939134eb759f01e16e6b354`.

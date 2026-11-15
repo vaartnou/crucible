@@ -13,12 +13,11 @@ from crucible.core.registry import get_task, list_tasks
 
 GOLDEN = Path(__file__).parent / "golden_scores.json"
 SEEDS = list(range(10))
-# In-process tasks only: application-backed tasks have explicit deployment integration
-# tests and may not be evaluated concurrently or assigned fabricated offline goldens.
+# Production oncall scores remain experimental until measured difficulty gates pass.
 POLICIES: dict[str, list[str]] = {
     ref: ["reference", *type(get_task(ref)).checks.exploit_policies, "do_nothing"]
     for ref in list_tasks()
-    if not get_task(ref).external_backend
+    if ref != "oncall@1"
 }
 CASES = [(task, policy) for task, names in POLICIES.items() for policy in names]
 MESSAGE = (

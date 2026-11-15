@@ -1,0 +1,144 @@
+[
+  {
+    "name": "checkout-52",
+    "deps": []
+  },
+  {
+    "name": "tariff-55",
+    "deps": []
+  },
+  {
+    "name": "customs-91",
+    "deps": []
+  },
+  {
+    "name": "loyalty-42",
+    "deps": []
+  },
+  {
+    "name": "scoring-60",
+    "deps": []
+  },
+  {
+    "name": "fraud-43",
+    "deps": [
+      "checkout-52",
+      "tariff-55"
+    ]
+  },
+  {
+    "name": "parcel-52",
+    "deps": [
+      "tariff-55",
+      "checkout-52"
+    ]
+  },
+  {
+    "name": "cart-40",
+    "deps": [
+      "customs-91"
+    ]
+  },
+  {
+    "name": "rebate-24",
+    "deps": [
+      "loyalty-42"
+    ]
+  },
+  {
+    "name": "beacon-13",
+    "deps": [
+      "scoring-60",
+      "customs-91"
+    ]
+  },
+  {
+    "name": "profile-40",
+    "deps": [
+      "checkout-52",
+      "customs-91"
+    ]
+  },
+  {
+    "name": "fulfill-51",
+    "deps": [
+      "fraud-43",
+      "profile-40"
+    ]
+  },
+  {
+    "name": "settlement-18",
+    "deps": [
+      "parcel-52",
+      "beacon-13"
+    ]
+  },
+  {
+    "name": "coupon-13",
+    "deps": [
+      "cart-40",
+      "beacon-13"
+    ]
+  },
+  {
+    "name": "pricing-15",
+    "deps": [
+      "rebate-24",
+      "cart-40"
+    ]
+  },
+  {
+    "name": "inventory-20",
+    "deps": [
+      "beacon-13"
+    ]
+  },
+  {
+    "name": "dispatch-75",
+    "deps": [
+      "fulfill-51",
+      "inventory-20"
+    ]
+  },
+  {
+    "name": "routing-54",
+    "deps": [
+      "settlement-18"
+    ]
+  },
+  {
+    "name": "webhook-19",
+    "deps": [
+      "coupon-13",
+      "settlement-18"
+    ]
+  },
+  {
+    "name": "catalog-47",
+    "deps": [
+      "pricing-15"
+    ]
+  },
+  {
+    "name": "wallet-69",
+    "deps": [
+      "inventory-20",
+      "coupon-13"
+    ]
+  },
+  {
+    "name": "session-cache",
+    "deps": []
+  },
+  {
+    "name": "edge-gateway",
+    "deps": [
+      "dispatch-75",
+      "routing-54",
+      "webhook-19",
+      "catalog-47",
+      "wallet-69",
+      "session-cache"
+    ]
+  }
+]
