@@ -1,0 +1,623 @@
+{
+  "schema_version": 1,
+  "name": "supplygym-outcomes-formulas-v1",
+  "source_hash": "b2325a928861f24b894f42958584befe743622d6818a50956868e29a6d458adb",
+  "runtime": {
+    "python": "3.14.7",
+    "numpy": "2.5.4",
+    "pydantic": "2.14.3",
+    "PyYAML": "6.0.3"
+  },
+  "rubric": {
+    "full_service": 0.98,
+    "full_surplus_ratio": 0.2,
+    "partial_service": 0.95,
+    "partial_surplus_ratio": 0.0,
+    "partial_credit": 0.5
+  },
+  "max_steps": 120,
+  "agent_timeout_seconds": 3600.0,
+  "infrastructure_retries": 2,
+  "scenarios": [
+    {
+      "id": "dev-supplygym-1000",
+      "task": "supplygym@2",
+      "split": "dev",
+      "seed": 1000,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "7e3f5cab713afeba57afcf139e6fca859e5aa55dceac07303f7dffaa0770c7a9",
+      "initial_state_hash": "40d12631fa7bc2b9f34bf1054325c6351e682e53ce999507d400c75139abba93"
+    },
+    {
+      "id": "dev-supplygym-1001",
+      "task": "supplygym@2",
+      "split": "dev",
+      "seed": 1001,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "7e3f5cab713afeba57afcf139e6fca859e5aa55dceac07303f7dffaa0770c7a9",
+      "initial_state_hash": "aef78005baccfec0350a605b88fe1e09d3c0140eb448b1dfcfbd41c09fd613d5"
+    },
+    {
+      "id": "dev-supplygym-1002",
+      "task": "supplygym@2",
+      "split": "dev",
+      "seed": 1002,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "7e3f5cab713afeba57afcf139e6fca859e5aa55dceac07303f7dffaa0770c7a9",
+      "initial_state_hash": "93ac095078b77596101e075ef728a0a09b4a0a586e683422822510ec68e3d72c"
+    },
+    {
+      "id": "dev-supplygym-1003",
+      "task": "supplygym@2",
+      "split": "dev",
+      "seed": 1003,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "7e3f5cab713afeba57afcf139e6fca859e5aa55dceac07303f7dffaa0770c7a9",
+      "initial_state_hash": "367b544fd643b4092d34d369c4b921a0d63cea2d2a848936d0849f28246da1a0"
+    },
+    {
+      "id": "dev-supplygym-1004",
+      "task": "supplygym@2",
+      "split": "dev",
+      "seed": 1004,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "7e3f5cab713afeba57afcf139e6fca859e5aa55dceac07303f7dffaa0770c7a9",
+      "initial_state_hash": "726826463283f73c872d1e7155731d647c5e23dae0171ee3d7ed4ab7313b0c45"
+    },
+    {
+      "id": "dev-supplygym-1005",
+      "task": "supplygym@2",
+      "split": "dev",
+      "seed": 1005,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "7e3f5cab713afeba57afcf139e6fca859e5aa55dceac07303f7dffaa0770c7a9",
+      "initial_state_hash": "d3bd1abe423ed7ce9b44f55f87502371833ce4fa0a330d18eb259ec750701ec7"
+    },
+    {
+      "id": "dev-supplygym-1006",
+      "task": "supplygym@2",
+      "split": "dev",
+      "seed": 1006,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "7e3f5cab713afeba57afcf139e6fca859e5aa55dceac07303f7dffaa0770c7a9",
+      "initial_state_hash": "75a030e33e1c50077b844d3761d84f73ab7be21ad9792188917c6fafee258caf"
+    },
+    {
+      "id": "dev-supplygym-1007",
+      "task": "supplygym@2",
+      "split": "dev",
+      "seed": 1007,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "7e3f5cab713afeba57afcf139e6fca859e5aa55dceac07303f7dffaa0770c7a9",
+      "initial_state_hash": "e5f365938610f5d652929f85d058d19ae10953acf446d43afbfc30744f2bcc4a"
+    },
+    {
+      "id": "dev-supplygym-1008",
+      "task": "supplygym@2",
+      "split": "dev",
+      "seed": 1008,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "7e3f5cab713afeba57afcf139e6fca859e5aa55dceac07303f7dffaa0770c7a9",
+      "initial_state_hash": "e3181b94acb71f56797b946bee3da9f9ca39120ef569353c14bae0b8fe9a92ff"
+    },
+    {
+      "id": "dev-supplygym-1009",
+      "task": "supplygym@2",
+      "split": "dev",
+      "seed": 1009,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "7e3f5cab713afeba57afcf139e6fca859e5aa55dceac07303f7dffaa0770c7a9",
+      "initial_state_hash": "81265731ae2e5a8d72ee58415f29a8a7b6e9b0ced582c28407650073165688a7"
+    },
+    {
+      "id": "dev-supplygym-fresh-1000",
+      "task": "supplygym-fresh@2",
+      "split": "dev",
+      "seed": 1000,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "7e3f5cab713afeba57afcf139e6fca859e5aa55dceac07303f7dffaa0770c7a9",
+      "initial_state_hash": "918561f493b3157af589c857d6023cf76567b6e896c96cdf5ae2eac2d5b64912"
+    },
+    {
+      "id": "dev-supplygym-fresh-1001",
+      "task": "supplygym-fresh@2",
+      "split": "dev",
+      "seed": 1001,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "7e3f5cab713afeba57afcf139e6fca859e5aa55dceac07303f7dffaa0770c7a9",
+      "initial_state_hash": "82e91b330d977c33c31ed184f227edf25ff812d953915ce788b0954dd58d828d"
+    },
+    {
+      "id": "dev-supplygym-fresh-1002",
+      "task": "supplygym-fresh@2",
+      "split": "dev",
+      "seed": 1002,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "7e3f5cab713afeba57afcf139e6fca859e5aa55dceac07303f7dffaa0770c7a9",
+      "initial_state_hash": "98bf486330af86c2d7a2dc3b779154bf9202a8b665cd4b230eb077e3642f234b"
+    },
+    {
+      "id": "dev-supplygym-fresh-1003",
+      "task": "supplygym-fresh@2",
+      "split": "dev",
+      "seed": 1003,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "7e3f5cab713afeba57afcf139e6fca859e5aa55dceac07303f7dffaa0770c7a9",
+      "initial_state_hash": "b252cd789b2c26eed1feecc2e11941dd144900996dbe8788f332ddd5f552bf6b"
+    },
+    {
+      "id": "dev-supplygym-fresh-1004",
+      "task": "supplygym-fresh@2",
+      "split": "dev",
+      "seed": 1004,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "7e3f5cab713afeba57afcf139e6fca859e5aa55dceac07303f7dffaa0770c7a9",
+      "initial_state_hash": "ee38c180b1309a9241f42b63d300b4d92d5d193373b2431c3ea0e5ebc6d63be4"
+    },
+    {
+      "id": "dev-supplygym-fresh-1005",
+      "task": "supplygym-fresh@2",
+      "split": "dev",
+      "seed": 1005,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "7e3f5cab713afeba57afcf139e6fca859e5aa55dceac07303f7dffaa0770c7a9",
+      "initial_state_hash": "3de85af10f10c8992002bc1290be365652d01ac3093d0982c2c72ee75577b7c1"
+    },
+    {
+      "id": "dev-supplygym-fresh-1006",
+      "task": "supplygym-fresh@2",
+      "split": "dev",
+      "seed": 1006,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "7e3f5cab713afeba57afcf139e6fca859e5aa55dceac07303f7dffaa0770c7a9",
+      "initial_state_hash": "c1e9df37bb4133a6b8ab29434f49f149b00033a679e6559f9eab8e68aed2f52e"
+    },
+    {
+      "id": "dev-supplygym-fresh-1007",
+      "task": "supplygym-fresh@2",
+      "split": "dev",
+      "seed": 1007,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "7e3f5cab713afeba57afcf139e6fca859e5aa55dceac07303f7dffaa0770c7a9",
+      "initial_state_hash": "e9550ccaf61a40bde2ee1e6c20342582a1c12d944f784608d15c33288ae659a7"
+    },
+    {
+      "id": "dev-supplygym-fresh-1008",
+      "task": "supplygym-fresh@2",
+      "split": "dev",
+      "seed": 1008,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "7e3f5cab713afeba57afcf139e6fca859e5aa55dceac07303f7dffaa0770c7a9",
+      "initial_state_hash": "1173eafeab95ec731b0c363829ed6ede8e1e7f6eea71e5f2e5c4eda3649198e3"
+    },
+    {
+      "id": "dev-supplygym-fresh-1009",
+      "task": "supplygym-fresh@2",
+      "split": "dev",
+      "seed": 1009,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "7e3f5cab713afeba57afcf139e6fca859e5aa55dceac07303f7dffaa0770c7a9",
+      "initial_state_hash": "cc6d39e8630980165b666af31abcb9752a901c272f12a22f33ab696be5f068be"
+    },
+    {
+      "id": "dev-supplygym-cala-1000",
+      "task": "supplygym-cala@2",
+      "split": "dev",
+      "seed": 1000,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "5c4f3df11d57d3d216708b1710fd626b1329113c1d7dd33e5d64acae3e38d09b",
+      "initial_state_hash": "a2cdfb17ded0da77fb6bce2a272aed1b71f830bf2537aed3a2d3e7a79f05b200"
+    },
+    {
+      "id": "dev-supplygym-cala-1001",
+      "task": "supplygym-cala@2",
+      "split": "dev",
+      "seed": 1001,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "5c4f3df11d57d3d216708b1710fd626b1329113c1d7dd33e5d64acae3e38d09b",
+      "initial_state_hash": "c4e03a4176b9eb334848f94e97e6b027227df00a93e0129d2c68c0c84834738d"
+    },
+    {
+      "id": "dev-supplygym-cala-1002",
+      "task": "supplygym-cala@2",
+      "split": "dev",
+      "seed": 1002,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "5c4f3df11d57d3d216708b1710fd626b1329113c1d7dd33e5d64acae3e38d09b",
+      "initial_state_hash": "e2804544b9299d4e5b9cee8f688e41c9d56990e75f6b6fc6814562e8c23e72bd"
+    },
+    {
+      "id": "dev-supplygym-cala-1003",
+      "task": "supplygym-cala@2",
+      "split": "dev",
+      "seed": 1003,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "5c4f3df11d57d3d216708b1710fd626b1329113c1d7dd33e5d64acae3e38d09b",
+      "initial_state_hash": "0447f7bc19044011ff9f70338526f228b0afa12b04b3b31b8fb68a4365eb5705"
+    },
+    {
+      "id": "dev-supplygym-cala-1004",
+      "task": "supplygym-cala@2",
+      "split": "dev",
+      "seed": 1004,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "5c4f3df11d57d3d216708b1710fd626b1329113c1d7dd33e5d64acae3e38d09b",
+      "initial_state_hash": "baf3792aa123557eaf064a2dc2ddde21c985806b19dbed219b2f752ae12da275"
+    },
+    {
+      "id": "dev-supplygym-cala-1005",
+      "task": "supplygym-cala@2",
+      "split": "dev",
+      "seed": 1005,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "5c4f3df11d57d3d216708b1710fd626b1329113c1d7dd33e5d64acae3e38d09b",
+      "initial_state_hash": "b9663d3209102f76e09b93d1a66e1bb5f819772be7520b4eefd80ad789f45267"
+    },
+    {
+      "id": "dev-supplygym-cala-1006",
+      "task": "supplygym-cala@2",
+      "split": "dev",
+      "seed": 1006,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "5c4f3df11d57d3d216708b1710fd626b1329113c1d7dd33e5d64acae3e38d09b",
+      "initial_state_hash": "a0d7182d93042a0ec1ef47a76fe193afdd9e09537d2c10a5d55f8652f5deb007"
+    },
+    {
+      "id": "dev-supplygym-cala-1007",
+      "task": "supplygym-cala@2",
+      "split": "dev",
+      "seed": 1007,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "5c4f3df11d57d3d216708b1710fd626b1329113c1d7dd33e5d64acae3e38d09b",
+      "initial_state_hash": "99b3e6f4692ee751c945a4cd46c3f7835e42ca1bbf3978315adc09b68c08e898"
+    },
+    {
+      "id": "dev-supplygym-cala-1008",
+      "task": "supplygym-cala@2",
+      "split": "dev",
+      "seed": 1008,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "5c4f3df11d57d3d216708b1710fd626b1329113c1d7dd33e5d64acae3e38d09b",
+      "initial_state_hash": "2217872d551f2d15ddcbb83de8bda70bcdfe6a0c7640e58dbb6d2d25ee2afac6"
+    },
+    {
+      "id": "dev-supplygym-cala-1009",
+      "task": "supplygym-cala@2",
+      "split": "dev",
+      "seed": 1009,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "5c4f3df11d57d3d216708b1710fd626b1329113c1d7dd33e5d64acae3e38d09b",
+      "initial_state_hash": "f0b9a7ad491b1d31fdb4e79e174ca58101ae03024a64c0fe122db64a49ed1f43"
+    },
+    {
+      "id": "heldout-supplygym-62000",
+      "task": "supplygym@2",
+      "split": "heldout",
+      "seed": 62000,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "7e3f5cab713afeba57afcf139e6fca859e5aa55dceac07303f7dffaa0770c7a9",
+      "initial_state_hash": "226b665fd7974ebb3d5aeed9f2265ea5fab51ab9662021b438a2984f57dedd20"
+    },
+    {
+      "id": "heldout-supplygym-62001",
+      "task": "supplygym@2",
+      "split": "heldout",
+      "seed": 62001,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "7e3f5cab713afeba57afcf139e6fca859e5aa55dceac07303f7dffaa0770c7a9",
+      "initial_state_hash": "fa1f277491b649550bd33d130afebed969363af20e3f2e674c604984a3bd4d67"
+    },
+    {
+      "id": "heldout-supplygym-62002",
+      "task": "supplygym@2",
+      "split": "heldout",
+      "seed": 62002,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "7e3f5cab713afeba57afcf139e6fca859e5aa55dceac07303f7dffaa0770c7a9",
+      "initial_state_hash": "00d7bafc236307f1de76db5b159e467ef457bdfc1f553725a9e05df45dc9ea72"
+    },
+    {
+      "id": "heldout-supplygym-62003",
+      "task": "supplygym@2",
+      "split": "heldout",
+      "seed": 62003,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "7e3f5cab713afeba57afcf139e6fca859e5aa55dceac07303f7dffaa0770c7a9",
+      "initial_state_hash": "7f025bab069172be827c657fc2b99f96a6a254b59e0901d85cf486511f10d97f"
+    },
+    {
+      "id": "heldout-supplygym-62004",
+      "task": "supplygym@2",
+      "split": "heldout",
+      "seed": 62004,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "7e3f5cab713afeba57afcf139e6fca859e5aa55dceac07303f7dffaa0770c7a9",
+      "initial_state_hash": "abf6f379cf27b71ecbf9f3168bd160da2942d04d1367dde46ebe7b1bad108f63"
+    },
+    {
+      "id": "heldout-supplygym-62005",
+      "task": "supplygym@2",
+      "split": "heldout",
+      "seed": 62005,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "7e3f5cab713afeba57afcf139e6fca859e5aa55dceac07303f7dffaa0770c7a9",
+      "initial_state_hash": "97f7680093248788e7a36cd2290e803624d49b67f36f0337745676a4b765311a"
+    },
+    {
+      "id": "heldout-supplygym-62006",
+      "task": "supplygym@2",
+      "split": "heldout",
+      "seed": 62006,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "7e3f5cab713afeba57afcf139e6fca859e5aa55dceac07303f7dffaa0770c7a9",
+      "initial_state_hash": "07353ba4931540540b69f0b0d9d2f812fa1a439973595e43627a81eab077722e"
+    },
+    {
+      "id": "heldout-supplygym-62007",
+      "task": "supplygym@2",
+      "split": "heldout",
+      "seed": 62007,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "7e3f5cab713afeba57afcf139e6fca859e5aa55dceac07303f7dffaa0770c7a9",
+      "initial_state_hash": "d5ef89cf384829c0094d29b4669298bd7946e705e3715a86be69d064de92f85d"
+    },
+    {
+      "id": "heldout-supplygym-62008",
+      "task": "supplygym@2",
+      "split": "heldout",
+      "seed": 62008,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "7e3f5cab713afeba57afcf139e6fca859e5aa55dceac07303f7dffaa0770c7a9",
+      "initial_state_hash": "39b79f9c181a909007e3e4be659ce55fc75d7db906f7f674e16d95f1cb3d12cd"
+    },
+    {
+      "id": "heldout-supplygym-62009",
+      "task": "supplygym@2",
+      "split": "heldout",
+      "seed": 62009,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "7e3f5cab713afeba57afcf139e6fca859e5aa55dceac07303f7dffaa0770c7a9",
+      "initial_state_hash": "ab9d1e1ab2311cf7f30a5a6967ffe6d84bb7be5ed6ade8ddb1fea108ad43142d"
+    },
+    {
+      "id": "heldout-supplygym-fresh-62000",
+      "task": "supplygym-fresh@2",
+      "split": "heldout",
+      "seed": 62000,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "7e3f5cab713afeba57afcf139e6fca859e5aa55dceac07303f7dffaa0770c7a9",
+      "initial_state_hash": "e57d6a55574db0ffeebf624ad96270a60dffbc3af232ad49e27e559f8f489b14"
+    },
+    {
+      "id": "heldout-supplygym-fresh-62001",
+      "task": "supplygym-fresh@2",
+      "split": "heldout",
+      "seed": 62001,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "7e3f5cab713afeba57afcf139e6fca859e5aa55dceac07303f7dffaa0770c7a9",
+      "initial_state_hash": "63fda832a80e9a6e93eef0b102217bdd7333a8547b751d33a6616cfd7c0091dc"
+    },
+    {
+      "id": "heldout-supplygym-fresh-62002",
+      "task": "supplygym-fresh@2",
+      "split": "heldout",
+      "seed": 62002,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "7e3f5cab713afeba57afcf139e6fca859e5aa55dceac07303f7dffaa0770c7a9",
+      "initial_state_hash": "ffe0972dbd4d5dc850929b5a505bdef1256a6a100b0bde9b5e43e02250a57bf3"
+    },
+    {
+      "id": "heldout-supplygym-fresh-62003",
+      "task": "supplygym-fresh@2",
+      "split": "heldout",
+      "seed": 62003,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "7e3f5cab713afeba57afcf139e6fca859e5aa55dceac07303f7dffaa0770c7a9",
+      "initial_state_hash": "6b7b4558018fe4a1c7fc0f1ce14c26b0412f85cf293a976a829b14efcd18dd85"
+    },
+    {
+      "id": "heldout-supplygym-fresh-62004",
+      "task": "supplygym-fresh@2",
+      "split": "heldout",
+      "seed": 62004,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "7e3f5cab713afeba57afcf139e6fca859e5aa55dceac07303f7dffaa0770c7a9",
+      "initial_state_hash": "dffc60501e12b145dd0babfe84569d771a4eeea103e6dd63fd3dc8dafb3239ca"
+    },
+    {
+      "id": "heldout-supplygym-fresh-62005",
+      "task": "supplygym-fresh@2",
+      "split": "heldout",
+      "seed": 62005,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "7e3f5cab713afeba57afcf139e6fca859e5aa55dceac07303f7dffaa0770c7a9",
+      "initial_state_hash": "3052b2621f64422d8b92598036466df9382c691ed23bd22706958868ec4bea3d"
+    },
+    {
+      "id": "heldout-supplygym-fresh-62006",
+      "task": "supplygym-fresh@2",
+      "split": "heldout",
+      "seed": 62006,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "7e3f5cab713afeba57afcf139e6fca859e5aa55dceac07303f7dffaa0770c7a9",
+      "initial_state_hash": "3b1d9ad31c7c21d2cadc838a49e6a2c9f40a690eb628786689aeefd52364bf50"
+    },
+    {
+      "id": "heldout-supplygym-fresh-62007",
+      "task": "supplygym-fresh@2",
+      "split": "heldout",
+      "seed": 62007,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "7e3f5cab713afeba57afcf139e6fca859e5aa55dceac07303f7dffaa0770c7a9",
+      "initial_state_hash": "275250882ce8804d33d3effe91e5d05d96d5d25e88735ec964d3ec3d6ef04d5e"
+    },
+    {
+      "id": "heldout-supplygym-fresh-62008",
+      "task": "supplygym-fresh@2",
+      "split": "heldout",
+      "seed": 62008,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "7e3f5cab713afeba57afcf139e6fca859e5aa55dceac07303f7dffaa0770c7a9",
+      "initial_state_hash": "a4e011b759286f46b100f5a466da1a281d603e10b0f5567f2812fe9baf852443"
+    },
+    {
+      "id": "heldout-supplygym-fresh-62009",
+      "task": "supplygym-fresh@2",
+      "split": "heldout",
+      "seed": 62009,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "7e3f5cab713afeba57afcf139e6fca859e5aa55dceac07303f7dffaa0770c7a9",
+      "initial_state_hash": "1b4494cc7a4c6cb05fbc3baec9944825adcfddf89c4d1dbdbb5e7b4fac6b6643"
+    },
+    {
+      "id": "heldout-supplygym-cala-62000",
+      "task": "supplygym-cala@2",
+      "split": "heldout",
+      "seed": 62000,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "5c4f3df11d57d3d216708b1710fd626b1329113c1d7dd33e5d64acae3e38d09b",
+      "initial_state_hash": "116c9a1e947860fe9b5f195283ebb4b4da070355dcca0ea02b1375df05d79d71"
+    },
+    {
+      "id": "heldout-supplygym-cala-62001",
+      "task": "supplygym-cala@2",
+      "split": "heldout",
+      "seed": 62001,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "5c4f3df11d57d3d216708b1710fd626b1329113c1d7dd33e5d64acae3e38d09b",
+      "initial_state_hash": "1117fed9a45d379fd0d55586fde7f35aaaeb665e62a54c30b4adcff64f3da925"
+    },
+    {
+      "id": "heldout-supplygym-cala-62002",
+      "task": "supplygym-cala@2",
+      "split": "heldout",
+      "seed": 62002,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "5c4f3df11d57d3d216708b1710fd626b1329113c1d7dd33e5d64acae3e38d09b",
+      "initial_state_hash": "2a4534acefd5d386f8b8ad74ea37483314f8be0d87f195eb5f6762f32126a82b"
+    },
+    {
+      "id": "heldout-supplygym-cala-62003",
+      "task": "supplygym-cala@2",
+      "split": "heldout",
+      "seed": 62003,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "5c4f3df11d57d3d216708b1710fd626b1329113c1d7dd33e5d64acae3e38d09b",
+      "initial_state_hash": "f083cda88773be2ee3c480f5c9f45f2586e52066715a92b83944935fdc84864a"
+    },
+    {
+      "id": "heldout-supplygym-cala-62004",
+      "task": "supplygym-cala@2",
+      "split": "heldout",
+      "seed": 62004,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "5c4f3df11d57d3d216708b1710fd626b1329113c1d7dd33e5d64acae3e38d09b",
+      "initial_state_hash": "7de9bd106e505a3402a21f5aa9ce6fe77a9ad8d2e8354ca7ef344239fa981af5"
+    },
+    {
+      "id": "heldout-supplygym-cala-62005",
+      "task": "supplygym-cala@2",
+      "split": "heldout",
+      "seed": 62005,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "5c4f3df11d57d3d216708b1710fd626b1329113c1d7dd33e5d64acae3e38d09b",
+      "initial_state_hash": "d106bec8502a2e2d2b1c0eb10ee998125ffe68a6d9213ffa3f52910d8556d353"
+    },
+    {
+      "id": "heldout-supplygym-cala-62006",
+      "task": "supplygym-cala@2",
+      "split": "heldout",
+      "seed": 62006,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "5c4f3df11d57d3d216708b1710fd626b1329113c1d7dd33e5d64acae3e38d09b",
+      "initial_state_hash": "b6e9d8a3e7082a0cd4204d4d0d449ab56530d15727aaaabe9ed0117192d13f9a"
+    },
+    {
+      "id": "heldout-supplygym-cala-62007",
+      "task": "supplygym-cala@2",
+      "split": "heldout",
+      "seed": 62007,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "5c4f3df11d57d3d216708b1710fd626b1329113c1d7dd33e5d64acae3e38d09b",
+      "initial_state_hash": "8af71d79fbe969d48a6f14f0e41709117ca1e983b8ca3081ef533b961afc9a8d"
+    },
+    {
+      "id": "heldout-supplygym-cala-62008",
+      "task": "supplygym-cala@2",
+      "split": "heldout",
+      "seed": 62008,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "5c4f3df11d57d3d216708b1710fd626b1329113c1d7dd33e5d64acae3e38d09b",
+      "initial_state_hash": "ae181b0f6e6cd9c73e5006f06aa3f511b3505ed18e7ec204068da18b538d68ef"
+    },
+    {
+      "id": "heldout-supplygym-cala-62009",
+      "task": "supplygym-cala@2",
+      "split": "heldout",
+      "seed": 62009,
+      "role": "buyer",
+      "weight": 1.0,
+      "scoring_hash": "5c4f3df11d57d3d216708b1710fd626b1329113c1d7dd33e5d64acae3e38d09b",
+      "initial_state_hash": "1cea3d34f3361efbd78626da9d6f70a720f325e9f17da2d1a4570a4d9682283d"
+    }
+  ]
+}

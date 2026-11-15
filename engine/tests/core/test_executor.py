@@ -176,22 +176,3 @@ async def test_unknown_names_fail_fast(job: Job, error: type[Exception], tmp_pat
     with pytest.raises(error):
         await LocalExecutor().run([job], tmp_path)
     assert not (tmp_path / "episodes").exists()
-
-
-async def test_external_backend_evaluations_require_sequential_execution(tmp_path: Path) -> None:
-    from crucible.core import registry
-    from crucible.core.registry import register_policy, register_task
-    from crucible.envs.guess.task import GuessNumber
-    from crucible.policies.baselines import DoNothing
-
-    class ExternalGuess(GuessNumber):
-        spec = GuessNumber.spec.model_copy(update={"id": "external-test"})
-        external_backend = True
-
-    with registry._reset_for_tests():  # pyright: ignore[reportPrivateUsage]
-        register_task(ExternalGuess)
-        register_policy("do_nothing")(DoNothing)
-        with pytest.raises(ValueError, match="concurrency=1"):
-            await LocalExecutor(concurrency=2).run(
-                [Job(task="external-test@1", policy="do_nothing", seed=0)], tmp_path
-            )

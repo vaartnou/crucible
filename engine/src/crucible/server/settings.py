@@ -13,11 +13,18 @@ class Settings(BaseSettings):
     port: int = 8000
     log_level: str = "info"
     runs_dir: Path = Path("runs/server")
+    harbor_jobs_dir: Path = Path("runs/harbor-jobs")
+    harbor_exports_dir: Path = Path("runs")
     session_ttl_seconds: int = 3600
     grade_token: str = ""
-    sidecar_task: str = "incident@1"
+    solution_token: str = ""
+    solution_policy: str = "reference"
+    sidecar_task: str = "oncall@1"
     sidecar_seed: int = 0
     sidecar_salt: str | None = None
+    spectator_path: Path | None = None
+    spectator_run_id: str = ""
+    spectator_strategy: str = "external"
 
 
 __all__ = ["Settings"]

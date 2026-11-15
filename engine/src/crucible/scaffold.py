@@ -137,8 +137,8 @@ def new_env(name: str, root: Path) -> list[Path]:
     envs = root / "src" / "crucible" / "envs"
     pyproject = root / "pyproject.toml"
     cls = _class_name(name)
-    guess_task = envs / _SOURCE / "task.py"
-    guess_policy = envs / _SOURCE / "policies" / "reference.py"
+    guess_task = root / "tests" / "fixtures" / _SOURCE / "task.py"
+    guess_policy = root / "tests" / "fixtures" / _SOURCE / "policies" / "reference.py"
     for path in (guess_task, guess_policy, pyproject):
         if not path.is_file():
             raise ScaffoldError(f"{path} not found; is {root} the engine folder?")

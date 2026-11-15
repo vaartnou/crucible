@@ -110,8 +110,6 @@ class LocalExecutor:
         if len(set(ids)) != len(ids):
             raise ValueError("Duplicate jobs: job ids must be unique")
         _check_names(jobs)
-        if self.concurrency != 1 and any(get_task(j.task).external_backend for j in jobs):
-            raise ValueError("External backend evaluations require concurrency=1")
         await asyncio.to_thread(git_commit)  # cache it now; the subprocess would block the loop
         episodes = _prepare(out_dir)
         semaphore = asyncio.Semaphore(self.concurrency)

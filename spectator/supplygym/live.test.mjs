@@ -28,13 +28,16 @@ test('server and feed replay appended public events without exposing private fil
   const dir = await mkdtemp(join(tmpdir(), 'supplygym-live-'));
   const live = join(dir, 'live', 'seed-42', 'events.jsonl');
   const baseline = join(dir, 'baselines', 'seed-42', 'ss', 'events.jsonl');
+  const reference = join(dir, 'baselines', 'seed-42', 'reference', 'events.jsonl');
   let server;
   try {
     await mkdir(join(dir, 'live', 'seed-42'), { recursive: true });
     await mkdir(join(dir, 'baselines', 'seed-42', 'ss'), { recursive: true });
-    await writeFile(join(dir, 'spectator-manifest.json'), JSON.stringify([{ seed: 42, scenario_comparison_id: 'scenario', events: { opencode: 'live/seed-42/events.jsonl', ss: 'baselines/seed-42/ss/events.jsonl' } }]));
+    await mkdir(join(dir, 'baselines', 'seed-42', 'reference'), { recursive: true });
+    await writeFile(join(dir, 'spectator-manifest.json'), JSON.stringify([{ seed: 42, scenario_comparison_id: 'scenario', events: { opencode: 'live/seed-42/events.jsonl', ss: 'baselines/seed-42/ss/events.jsonl', reference: 'baselines/seed-42/reference/events.jsonl' } }]));
     await writeFile(live, lines([week('opencode', 1)]));
     await writeFile(baseline, lines([week('ss', 1), week('ss', 2), final('ss')]));
+    await writeFile(reference, lines([week('reference', 1), week('reference', 2), final('reference')]));
     await writeFile(join(dir, 'private.json'), 'secret');
     await writeFile(join(dir, 'live', 'seed-42', 'private.json'), 'secret');
     server = spawn('python', [new URL('./serve.py', import.meta.url).pathname.replace(/^\/(\w:)/, '$1'), '--run-dir', dir, '--port', '0']);
@@ -54,6 +57,7 @@ test('server and feed replay appended public events without exposing private fil
           const run = getRun(groups, 'opencode');
           if (!appended && run?.latestWeek === 1) {
             assert.equal(getRun(groups, 'ss').latestWeek, 2);
+            assert.equal(getRun(groups, 'reference').latestWeek, 2);
             assert.equal(run.final, null);
             appended = true;
             appendFile(live, lines([week('opencode', 2), final('opencode')])).catch(fail);

@@ -14,7 +14,7 @@ UI = Path(__file__).resolve().parent
 ASSETS = {"index.html", "app.js", "feed.js", "ui.js", "style.css"}
 RUN_FILE = re.compile(
     r"(?:spectator-manifest\.json|live/seed-\d+/events\.jsonl|"
-    r"baselines/seed-\d+/(?:ss|base_stock|fixed_lot|fill_adjusted_base_stock)/events\.jsonl)"
+    r"baselines/seed-\d+/(?:reference|ss|base_stock|fixed_lot|fill_adjusted_base_stock|stop_early|do_nothing)/events\.jsonl)"
 )
 
 

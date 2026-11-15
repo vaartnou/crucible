@@ -22,10 +22,10 @@ async def _play(*args: str) -> tuple[int, str]:
 
 async def test_play_api_matches_eval(tmp_path: Path) -> None:
     local = (
-        await LocalExecutor().run([Job(task="incident@1", policy="reference", seed=0)], tmp_path)
+        await LocalExecutor().run([Job(task="oncall@1", policy="reference", seed=0)], tmp_path)
     )[0]
     async with live_api(tmp_path / "srv") as url:
-        code, output = await _play("--api", url, "--seed", "0", "--task", "incident@1")
+        code, output = await _play("--api", url, "--seed", "0", "--task", "oncall@1")
     assert code == 0
     body = json.loads(output.strip().splitlines()[-1])
     assert body == {
@@ -36,8 +36,8 @@ async def test_play_api_matches_eval(tmp_path: Path) -> None:
 
 
 async def test_play_mcp_prints_steps_without_score(tmp_path: Path) -> None:
-    async with live_sidecar(tmp_path, 0) as url:
-        code, output = await _play("--mcp", f"{url}/mcp", "--task", "incident@1")
+    async with live_sidecar(tmp_path, 0, task="oncall@1") as url:
+        code, output = await _play("--mcp", f"{url}/mcp", "--task", "oncall@1")
     assert code == 0
     body = json.loads(output.strip().splitlines()[-1])
     assert set(body) == {"steps", "stop_reason"}
@@ -48,11 +48,11 @@ async def test_play_mcp_prints_steps_without_score(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     "args",
     [
-        ["--task", "incident@1"],
-        ["--task", "incident@1", "--api", "http://x", "--mcp", "http://y"],
-        ["--task", "incident@1", "--api", "http://x"],
-        ["--task", "incident@1", "--mcp", "http://y", "--seed", "1"],
-        ["--task", "incident@1", "--mcp", "http://y", "--policy", "nope"],
+        ["--task", "oncall@1"],
+        ["--task", "oncall@1", "--api", "http://x", "--mcp", "http://y"],
+        ["--task", "oncall@1", "--api", "http://x"],
+        ["--task", "oncall@1", "--mcp", "http://y", "--seed", "1"],
+        ["--task", "oncall@1", "--mcp", "http://y", "--policy", "nope"],
         ["--mcp", "http://y", "--task", "nope@1"],
         ["--mcp", "http://y"],
     ],
@@ -64,8 +64,8 @@ async def test_play_bad_flags_exit_2(args: list[str]) -> None:
 
 async def test_play_unreachable_server_exits_2() -> None:
     code, _ = await _play(
-        "--api", f"http://127.0.0.1:{free_port()}", "--seed", "0", "--task", "incident@1"
+        "--api", f"http://127.0.0.1:{free_port()}", "--seed", "0", "--task", "oncall@1"
     )
     assert code == 2
-    code, _ = await _play("--mcp", f"http://127.0.0.1:{free_port()}/mcp", "--task", "incident@1")
+    code, _ = await _play("--mcp", f"http://127.0.0.1:{free_port()}/mcp", "--task", "oncall@1")
     assert code == 2
