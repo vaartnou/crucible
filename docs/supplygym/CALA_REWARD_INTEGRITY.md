@@ -49,9 +49,15 @@ this positive bound and the denominator stays positive.
 
 ## Reference and adversarial checks
 
-`reference` on Cala @3 loads `cala_ppo` and preserves its adaptive supplier allocation,
-with a one-day minimum safety-stock buffer for the stronger service objective.
-Cala @2 continues to use `availability`. No checkpoint or older task behavior changes.
+`reference` on Cala @3 uses the deterministic `service_availability` rule. It
+weights suppliers using their reported fill and risk, keeps half a day of safety
+stock in calm conditions, and increases the buffer with mean incumbent risk:
+`min(3, 0.5 + 10 * max(0, mean_risk - 0.15))` days. Replenishment uses multiplier
+1 with no expediting. It reads public observations and needs no checkpoint,
+training, or PPO inference. The Harbor oracle uses the same registered reference.
+
+Cala @2 continues to use `availability`; @1 retains its legacy checkpoint. The
+scoring floor still uses default `ss` play, independently of the reference rule.
 
 The public-tool regression bank covers dev seeds **1000-1009**:
 
@@ -64,19 +70,20 @@ The public-tool regression bank covers dev seeds **1000-1009**:
 - Every rollout checks the raw terminal surplus against the certificate before
   checking the clipped score. Separate tests cover large prepaid inventories,
   prepaid freight arriving beyond the horizon, salted deterministic floors,
-  read-only grading, budget exhaustion, and incomplete years.
+  read-only grading, budget exhaustion, and incomplete years. A full @3 reference
+  rollout also succeeds when constructing a PPO policy is explicitly forbidden.
 
 A separate cross-check on the audit's **62000-62019** held-out bank measured:
 
 | Policy | Mean score | Mean service |
 | --- | ---: | ---: |
-| reference | 0.4443 | 99.21% |
+| reference | 0.4280 | 99.19% |
 | ss | 0.1479 | 97.84% |
 | base_stock | 0.0479 | 97.14% |
 | fixed_lot | 0.0208 | 95.75% |
 | fill_adjusted_base_stock | 0.1080 | 97.62% |
 | blind 0.8 / zero safety stock | 0.0813 | 97.51% |
-| reference with week-50 starvation | 0.4237 | 99.21% |
+| reference with week-50 starvation | 0.4078 | 99.19% |
 
 Starvation wins on **0/20** held-out seeds. Reference is not an oracle: `ss`,
 `base_stock`, `fill_adjusted_base_stock`, and the blind script each exceed it on

@@ -17,7 +17,7 @@ from crucible.core.transcript import TranscriptWriter, read_transcript
 from crucible.envs.supplygym import scenarios
 from crucible.envs.supplygym.outcomes import RUBRIC, RUBRIC_HASH, OutcomeTask, grade_outcomes
 from crucible.envs.supplygym.play import Play
-from crucible.envs.supplygym.policies import baselines
+from crucible.envs.supplygym.policies import baselines, reference
 from crucible.envs.supplygym.policies.reference import Decider, make_decider
 from crucible.envs.supplygym.scenarios import Scenario, Suite, aggregate, digest, snapshot
 
@@ -320,18 +320,30 @@ async def test_cala_upper_bound_is_fixed_and_grading_is_read_only(salt: str) -> 
     assert await task.grade() == score
 
 
-async def test_cala_v3_reference_uses_cala_ppo(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_cala_v3_reference_never_loads_ppo(monkeypatch: pytest.MonkeyPatch) -> None:
     selected: list[str] = []
 
     def capture(name: str) -> Decider:
         selected.append(name)
         return make_decider(name)
 
+    def reject_checkpoint(*args: Any, **kwargs: Any) -> None:
+        raise AssertionError("Cala @3 must not construct a PPO policy")
+
+    monkeypatch.setattr(reference, "PpoDecider", reject_checkpoint)
     monkeypatch.setattr(baselines, "make_decider", capture)
     task = get_task("supplygym-cala@3")
+    observation = await task.reset(1000)
     policy = get_policy("reference", task.spec.ref)
     await policy.reset(task.spec, task.tools(), task.instruction())
-    assert selected == ["cala_ppo"]
+    while not task.done():
+        action = await policy.act(observation)
+        assert action is not None
+        result = await task.step(action)
+        assert result.ok
+        observation = Observation(last_result=result)
+    assert (await task.grade()).total > 0
+    assert selected == ["service_availability"]
 
 
 @pytest.mark.parametrize(

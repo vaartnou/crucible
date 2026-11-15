@@ -11,11 +11,16 @@ from typing import Any
 from crucible.core.registry import register_policy
 from crucible.core.task import TaskSpec
 from crucible.core.tools import Observation, ToolCall, ToolSpec
-from crucible.envs.supplygym.policies.reference import CALA_REFERENCE, Decider, make_decider
+from crucible.envs.supplygym.policies.reference import (
+    CALA_REFERENCE,
+    CALA_SERVICE_REFERENCE,
+    Decider,
+    make_decider,
+)
 from crucible.envs.supplygym.policies.views import call, parse_status
 
 SUPPLIERS = [f"S{k:02d}" for k in range(1, 11)]
-# The legacy regimes retain their checkpoint; Cala has its own frozen reference.
+# Legacy versions retain their checkpoints; Cala @3 uses a public-signal rule.
 TASK_IDS = ("supplygym", "supplygym-fresh", "supplygym-cala")
 
 
@@ -41,18 +46,16 @@ class _Loop:
         self._started = False
         self._decider: Decider | None = None
         self._reference = "ppo"
-        self._service_buffer = False
 
     def _make(self) -> Decider:
         raise NotImplementedError
 
     async def reset(self, task_spec: TaskSpec, tools: list[ToolSpec], instruction: str) -> None:
-        self._service_buffer = task_spec.id == "supplygym-cala" and task_spec.version == 3
         self._reference = CALA_REFERENCE if task_spec.id == "supplygym-cala" else "ppo"
-        if task_spec.version >= 2 and not (
-            task_spec.id == "supplygym-cala" and task_spec.version == 3
-        ):
+        if task_spec.version >= 2:
             self._reference = "availability"
+        if task_spec.id == "supplygym-cala" and task_spec.version == 3:
+            self._reference = CALA_SERVICE_REFERENCE
         self._weeks, self._started, self._decider = 0, False, self._make()
 
     async def act(self, obs: Observation) -> ToolCall | None:
@@ -136,30 +139,12 @@ class MaxExpedite(_Loop):
 
 @_register("reference")
 class Reference(_Loop):
-    """The reference (PPO) policy played over the tools."""
+    """The version-specific reference policy played over the tools."""
 
     name = "reference"
 
     def _make(self) -> Decider:
-        decider = make_decider(self._reference)
-        return _ServiceBufferedPpo(decider) if self._service_buffer else decider
-
-
-class _ServiceBufferedPpo:
-    """Keep PPO's adaptive allocation with one day of service safety stock for v3.
-
-    The frozen checkpoint optimized terminal profit, not v3's stronger service
-    objective. This public-control buffer preserves its learned allocation while
-    reducing service failures without unconditional expensive expediting.
-    """
-
-    def __init__(self, decider: Decider) -> None:
-        self.decider = decider
-
-    def decide(self, status: dict[str, Any]) -> dict[str, Any]:
-        args = self.decider.decide(status)
-        args["safety_stock_days"] = max(1.0, args["safety_stock_days"])
-        return args
+        return make_decider(self._reference)
 
 
 @register_policy("transfer_ppo", "supplygym-cala")

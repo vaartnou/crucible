@@ -204,7 +204,7 @@ async def _v3_rollout(
     starve: bool = False,
     controls: dict[str, JsonValue] | None = None,
 ) -> Score:
-    """Exercise the public tools, including the registered PPO reference binding."""
+    """Exercise the public tools, including the registered rule reference binding."""
     from crucible.core.registry import get_policy, get_task
     from crucible.core.tools import ToolCall
 
