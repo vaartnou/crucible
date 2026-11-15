@@ -77,6 +77,10 @@ def test_new_env_passes_the_generic_checks_unchanged(engine_copy: Path) -> None:
         "-v",
         "-p",
         "no:cacheprovider",
+        # The outer suite already checks shipped environments. This subprocess checks
+        # the newly scaffolded environment plus the static policy-import audit.
+        "-k",
+        "demo_env or test_no_hidden_imports",
         "tests/generic",
         "src/crucible/envs/demo_env",
         "tests/policies/test_no_hidden_imports.py",
@@ -115,7 +119,7 @@ def test_new_env_files(engine_copy: Path) -> None:
     assert '@register_policy("reference", "triage")' in policy
     group = tomllib.loads((engine_copy / "pyproject.toml").read_text())["project"]["entry-points"]
     assert group["crucible.envs"]["triage"] == "crucible.envs.triage"
-    assert group["crucible.envs"]["guess"] == "crucible.envs.guess"
+    assert group["crucible.envs"]["oncall"] == "crucible.envs.oncall"
 
 
 @pytest.mark.parametrize("name", ["Bad", "1abc", "has-dash", "class", "", "a" * 25])
@@ -126,7 +130,7 @@ def test_bad_names(engine_copy: Path, name: str) -> None:
 
 def test_taken_names(engine_copy: Path) -> None:
     with pytest.raises(ScaffoldError, match="already registered"):
-        new_env("guess", engine_copy)
+        new_env("oncall", engine_copy)
     new_env("fresh", engine_copy)
     with pytest.raises(ScaffoldError, match="already exists"):
         new_env("fresh", engine_copy)

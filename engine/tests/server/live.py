@@ -21,7 +21,7 @@ def free_port() -> int:
 
 
 @asynccontextmanager
-async def live_sidecar(runs_dir: Path, seed: int, task: str = "incident@1") -> AsyncGenerator[str]:
+async def live_sidecar(runs_dir: Path, seed: int, task: str = "guess@1") -> AsyncGenerator[str]:
     """Yield the base URL of a sidecar server. Always shut it down."""
     settings = Settings(
         mode="sidecar",

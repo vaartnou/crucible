@@ -161,8 +161,7 @@ class SupplyEnv:
         if not fill_adjusted:
             return sum(o["ordered"] if d < o["rev"] else o["qty"] for o in self.orders)
         return sum(
-            o["ordered"] * self.fill[o["sup"]] if d < o["rev"] else o["qty"]
-            for o in self.orders
+            o["ordered"] * self.fill[o["sup"]] if d < o["rev"] else o["qty"] for o in self.orders
         )
 
     def lbar(self, act):

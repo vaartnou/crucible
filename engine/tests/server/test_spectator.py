@@ -95,4 +95,3 @@ async def test_simulator_version_normalizes_crlf(
     )
     crlf_feed = Spectator(tmp_path / "crlf.jsonl", task, 5, "secret")
     assert lf_feed.metadata["simulator_version"] == crlf_feed.metadata["simulator_version"]
-

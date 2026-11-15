@@ -17,11 +17,18 @@ class EpisodeSession:
     """Owns actions, final grading, transcripts and episode resource release."""
 
     def __init__(
-        self, task: Task, seed: int, writer: TranscriptWriter, *, salt: str | None = None
+        self,
+        task: Task,
+        seed: int,
+        writer: TranscriptWriter,
+        *,
+        salt: str | None = None,
+        difficulty: int = 0,
     ) -> None:
         self._task = task
         self._seed = seed
         self._salt = salt
+        self._difficulty = difficulty
         self._writer = writer
         self._steps_used = 0
         self._outcome: tuple[StopReason, Score] | None = None
@@ -67,6 +74,10 @@ class EpisodeSession:
                 job_id=job.job_id,
                 salted=self._salt is not None,
             )
+            if self._difficulty:
+                return await self._task.reset(
+                    self._seed, difficulty=self._difficulty, salt=self._salt
+                )
             return await self._task.reset(self._seed, salt=self._salt)
 
     async def step(self, call: ToolCall) -> ToolResult:

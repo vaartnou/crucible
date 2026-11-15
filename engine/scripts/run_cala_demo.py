@@ -253,8 +253,7 @@ def collect_results(
                     score["breakdown"]["operating_surplus"] for score in scores
                 )
                 / len(seeds),
-                "mean_service": sum(score["breakdown"]["service"] for score in scores)
-                / len(seeds),
+                "mean_service": sum(score["breakdown"]["service"] for score in scores) / len(seeds),
             }
         if check_harbor_controls:
             aggregates["harbor_oracle"] = {

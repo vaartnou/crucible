@@ -18,8 +18,8 @@ from crucible.core.registry import (
 from crucible.core.scoring import Score
 from crucible.core.task import Task, TaskSpec
 from crucible.core.tools import Observation, ToolCall, ToolResult, ToolSpec
-from crucible.envs.guess.policies.reference import BinarySearch
 from crucible.policies.baselines import DoNothing
+from tests.fixtures.guess.policies.reference import BinarySearch
 
 
 class _Base(Task):
@@ -183,8 +183,10 @@ def test_builtins_loaded_once(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_builtin_envs_declared_as_entry_points() -> None:
-    assert ("guess", "crucible.envs.guess") in registry.list_envs()
-    assert ("incident", "crucible.envs.incident") in registry.list_envs()
+    assert registry.list_envs() == [
+        ("oncall", "crucible.envs.oncall"),
+        ("supplygym", "crucible.envs.supplygym"),
+    ]
 
 
 def test_plugin_env_registers_through_entry_point(monkeypatch: pytest.MonkeyPatch) -> None:

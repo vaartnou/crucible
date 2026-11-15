@@ -2,7 +2,7 @@
 
 Each folder holds the agent's container (no engine in it), a simulator sidecar that installs the
 engine from a vendored wheel, a verifier that reads `/grade` with a per-task token, and an oracle
-`solve.sh` that plays a scripted policy over MCP. See `docs/decisions.md` for why.
+`solve.sh` that invokes a token-protected in-process policy. See `docs/decisions.md` for why.
 """
 
 import hashlib
@@ -194,9 +194,6 @@ def export_harbor(
         raise ExportError("seeds repeat")
     task = get_task(task_ref)
     spec = task.spec
-    bundle = task.deployment_bundle()
-    if bundle is not None:
-        bundle.validate()
     ref = spec.ref
     instruction = task.instruction().strip()
     keywords = "[" + ", ".join(_toml_str(k) for k in _keywords(spec)) + "]"
@@ -206,6 +203,11 @@ def export_harbor(
     templates = _template_files()
 
     _prepare_out(out, force)
+    dockerfile = files("crucible.export") / "templates/harbor/environment/mcp-server/Dockerfile"
+    image_hash = hashlib.sha256(
+        wheel_bytes + artifacts.requirements.read_bytes() + dockerfile.read_bytes()
+    ).hexdigest()
+    sidecar_image = f"crucible-sidecar:{image_hash[:24]}"
     folders: list[Path] = []
     for seed in seeds:
         folder = out / task_folder_name(ref, seed)
@@ -220,6 +222,8 @@ def export_harbor(
             "ENGINE_VERSION": engine_version,
             "GIT_COMMIT": commit,
             "GRADE_TOKEN": token_factory(),
+            "SOLUTION_TOKEN": secrets.token_hex(32),
+            "SIDECAR_IMAGE": sidecar_image,
             "SIDECAR_SALT": salt_factory(),
             "SOLUTION_POLICY": solution_policy,
             "INSTRUCTION": instruction,
@@ -229,29 +233,16 @@ def export_harbor(
         for rel, resource in templates:
             target = folder / rel
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(_render(resource.read_text(), values))
+            target.write_text(
+                _render(resource.read_text(encoding="utf-8"), values),
+                encoding="utf-8",
+                newline="\n",
+            )
             if rel in _EXECUTABLE:
                 target.chmod(0o755)
-        for vendor in ("environment/mcp-server", "solution"):
+        for vendor in ("environment/mcp-server",):
             shutil.copyfile(artifacts.wheel, folder / vendor / artifacts.wheel.name)
             shutil.copyfile(artifacts.requirements, folder / vendor / "requirements.txt")
-        if bundle is not None:
-            bundle.compose(folder / "environment")
-            verifier = folder / "tests/test.sh"
-            verifier.write_text(
-                verifier.read_text().replace(
-                    '    write("transcript.json",',
-                    '    write("evidence.json", json.dumps(body.get("evidence", {}), indent=2))\n'
-                    '    write("transcript.json",',
-                )
-            )
-            verifier.write_text(
-                verifier.read_text().replace(
-                    '    write("grade.json",',
-                    '    summary["cleanup_errors"] = body.get("cleanup_errors", [])\n'
-                    '    write("grade.json",',
-                )
-            )
         folders.append(folder)
 
     manifest: dict[str, JsonValue] = {
@@ -261,13 +252,15 @@ def export_harbor(
         "engine_version": engine_version,
         "git_commit": commit,
         "wheel": artifacts.wheel.name,
+        "sidecar_image": sidecar_image,
         "wheel_sha256": hashlib.sha256(wheel_bytes).hexdigest(),
         "tasks": [f.name for f in folders],
     }
-    if bundle is not None:
-        manifest["deployment"] = bundle.fingerprint()
-        manifest["requirements_sha256"] = hashlib.sha256(
-            artifacts.requirements.read_bytes()
-        ).hexdigest()
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    build = out / "build-sidecar.sh"
+    build.write_text(
+        '#!/bin/sh\nset -eu\ncd "$(dirname "$0")"\n'
+        f"docker build -t {sidecar_image} ./{folders[0].name}/environment/mcp-server\n"
+    )
+    build.chmod(0o755)
     return folders
