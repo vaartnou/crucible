@@ -1,0 +1,5 @@
+full_service: 0.98
+full_surplus_ratio: 0.20
+partial_service: 0.95
+partial_surplus_ratio: 0.0
+partial_credit: 0.5
