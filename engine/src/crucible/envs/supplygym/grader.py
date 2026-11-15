@@ -15,7 +15,7 @@ from typing import Final
 from pydantic import BaseModel, ConfigDict, Field
 
 from crucible.core.scoring import Score, load_scoring_config
-from crucible.envs.supplygym.play import Play
+from crucible.envs.supplygym.play import CALA_REGIME, Play
 
 __all__ = ["SCORING_CONFIG", "SCORING_HASH", "ScoringConfig", "grade_play", "replay_reference"]
 
@@ -39,7 +39,7 @@ _COST_KEYS: Final = ("expedite", "switching", "stockout", "holding", "purchase")
 
 
 def _fresh(play: Play) -> Play:
-    return Play(play.seed, play.regime, play.env.salt)
+    return Play(play.seed, play.regime, play.env.salt, play.env.signals)
 
 
 def replay_default(play: Play) -> Play:
@@ -51,10 +51,11 @@ def replay_default(play: Play) -> Play:
 
 def replay_reference(play: Play, name: str | None = None) -> Play:
     """Same tape, the named reference policy driven through the same status view and controls."""
-    from crucible.envs.supplygym.policies.reference import make_decider
+    from crucible.envs.supplygym.policies.reference import CALA_REFERENCE, make_decider
 
     p = _fresh(play)
-    decider = make_decider(name or SCORING_CONFIG.reference)
+    reference = CALA_REFERENCE if play.regime == CALA_REGIME else SCORING_CONFIG.reference
+    decider = make_decider(name or reference)
     while not p.done and p.env.day < p.env.horizon:
         p.apply(decider.decide(p.status()))
     return p

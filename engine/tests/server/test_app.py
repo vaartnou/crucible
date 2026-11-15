@@ -60,7 +60,17 @@ async def test_healthz(client: httpx.AsyncClient) -> None:
 
 async def test_tasks(client: httpx.AsyncClient) -> None:
     r = await client.get("/v1/tasks")
-    assert r.json() == ["guess@1", "incident@1", "supplygym@1", "supplygym-fresh@1"]
+    assert r.json() == [
+        "guess@1",
+        "incident@1",
+        "supplygym@1",
+        "supplygym@2",
+        "supplygym-cala@1",
+        "supplygym-cala@2",
+        "supplygym-cala@3",
+        "supplygym-fresh@1",
+        "supplygym-fresh@2",
+    ]
 
 
 async def test_tools_have_schemas(client: httpx.AsyncClient) -> None:

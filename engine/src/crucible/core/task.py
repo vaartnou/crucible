@@ -1,12 +1,15 @@
 """Task definition: the spec and the abstract environment."""
 
 from abc import ABC, abstractmethod
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
 
 from crucible.core.scoring import Score
 from crucible.core.tools import Observation, ToolCall, ToolResult, ToolSpec
+
+if TYPE_CHECKING:
+    from crucible.export.deployment import DeploymentBundle
 
 
 class TaskSpec(BaseModel):
@@ -63,6 +66,7 @@ class Task(ABC):
 
     spec: ClassVar[TaskSpec]
     scoring_hash: ClassVar[str] = "none"
+    external_backend: ClassVar[bool] = False
     checks: ClassVar[TaskChecks] = TaskChecks()
 
     @abstractmethod
@@ -90,6 +94,22 @@ class Task(ABC):
     @abstractmethod
     def instruction(self) -> str:
         """Instruction text shown to the policy."""
+
+    async def aclose(self) -> None:
+        """Release resources owned by this episode, including partially initialized resources.
+
+        Implementations must tolerate repeated calls and must not stop shared services.
+        Grading applies any published continuation rules before this hook runs.
+        """
+        return None
+
+    def grading_evidence(self) -> dict[str, JsonValue]:
+        """Frozen private evidence available only to the grading harness after grade()."""
+        return {}
+
+    def deployment_bundle(self) -> DeploymentBundle | None:
+        """Optional application services packaged privately by the deployment runner."""
+        return None
 
     def hidden_strings(self) -> frozenset[str]:
         """Words from the hidden state that no successful tool result may contain. After reset.

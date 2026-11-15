@@ -6,6 +6,22 @@ two pricier alternative suppliers. Hidden disruptions (strikes, port closures, f
 bankruptcies) hit suppliers and spread down the tiers. The agent sees noisy news, rumors, risk
 scores, late orders and fill ratios. Synthetic supplier graph; not real data.
 
+Version 2 is available as `supplygym@2`, `supplygym-fresh@2`, and
+`supplygym-cala@2`. Its fixed outcome rubric awards 1.0, 0.5, or 0.0 for verified
+completion, service, and operating surplus. The scenario runner evaluates a
+frozen schedule and saves every outcome and audit trace. Run
+`python -m crucible.envs.supplygym.scenarios --help` from `engine` for the
+`freeze`, `run`, and `audit` commands. The specification and measured control
+results are in [outcome scoring](../../../../../docs/supplygym/OUTCOME_SCORING.md).
+
+Opt-in `supplygym-cala@3` retains the version 2 controls and completion rule. Its
+score is completed operating surplus divided by a positive scenario-specific theoretical
+upper bound, clamped to [0, 1]; unfinished episodes score zero. The verifier computes the
+bound from the seeded and salted hidden scenario before any action. It relaxes purchase
+and shipment constraints, so the bound need not be attainable. Trusted score breakdowns
+include the bound and ledger accounting. Export it using the normal Harbor export command
+with `--task supplygym-cala@3`.
+
 | | |
 |---|---|
 | Refs | `supplygym@1` (calibration regime), `supplygym-fresh@1` (fresh regime) |
@@ -13,6 +29,59 @@ scores, late orders and fill ratios. Synthetic supplier graph; not real data.
 | Step budget | 120 tool calls (about 53 `set_controls`) |
 | Regimes | `supplygym`: the calibration the reward and reference were tuned on. `supplygym-fresh`: other supplier graph, wider price spread, 1.5x disruption rate |
 | Seed splits | train 20000-21999 (external trainer only), dev 1000-1029, held-out 10000-10049, fresh 30000-30049 |
+
+## Cala world
+
+`supplygym-cala@1` models one electronics unit sourced from 10 incumbents and two
+backups. The Cala project’s public disclosure snapshot supplies 12 historical
+supplier-to-buyer links and 156 operating-site observations across 20 countries.
+A disruption in one region can cut deliveries from several suppliers, including
+suppliers whose largest operating exposure is elsewhere.
+
+The modeled SKU, supplier roles, site output shares, contracts, port exposure,
+and incidents are synthetic. A fixed world seed sets the terms and freight slots.
+Regular shipments arrive on a four-day cycle. An interruption can miss the booked
+slot, while expedited freight bypasses consolidation. The buyer starts with
+prepaid shipments already on order. The briefing lists the slots, and status
+reports booked arrival times. Site-level losses stay hidden.
+
+The Cala grader and Harbor solution use `reference`, a PPO trained on this world.
+`transfer_ppo` runs the original SupplyGym weights on the same year. The
+`availability` diagnostic allocates orders using public fill ratios and risk.
+The denominator uses the larger of $1,000 and that year's Cala PPO gain over
+the default rule. Historical draft runs identify the earlier reference by scoring hash.
+
+Run these commands from `engine/` to reproduce training and the held-out comparison.
+
+```sh
+uv run python scripts/train_cala_ppo.py --output-path runs/cala_ppo.npz
+uv run python -m crucible.envs.supplygym.evaluate --task supplygym-cala@1 --split heldout --policies reference,transfer_ppo,availability
+```
+
+The trainer first fits a 112-input actor to a rule that shifts orders away
+from risky or overdue suppliers and buys safety stock and faster freight when
+availability falls. It then trains the actor with clipped PPO on weekly profit
+changes, including approval costs and terminal stock credit. Fitting and model
+selection use seeds 20000–21999. The training record beside the weights gives
+the seed partitions, validation results and checkpoint digest.
+
+All three banks below use the Cala world and 53 public decisions per episode.
+Dollar figures are mean paired annual profit differences. The last column counts
+years in which Cala PPO beat the default.
+
+| Seeds | Over default | Over transfer PPO | Over availability | Wins |
+|---|---:|---:|---:|---:|
+| 10000–10049 (held-out) | +$2,033 | +$4,149 | +$945 | 39/50 |
+| 30000–30049 (fresh seed bank) | +$1,820 | +$2,791 | +$1,039 | 34/50 |
+| 35000–35049 (reserved confirmation) | +$1,068 | +$1,549 | +$701 | 30/50 |
+
+The paired 95% bootstrap interval for the gain over default was $1,095 to $3,071
+on held-out and $362 to $1,893 on confirmation. The first two banks had already
+been used to evaluate an earlier draft. The confirmation seeds were reserved
+before the final checkpoint was selected.
+
+See the [source and field mapping](../../../../../docs/supplygym/CALA_DATA_NOTES.md)
+and [baseline system map](../../../../../docs/supplygym/SYSTEM_MAP.md).
 
 ## Tools
 

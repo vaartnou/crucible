@@ -23,6 +23,15 @@ Noise alerts and unrelated deploys make a fast guess risky: a wrong repair is a 
 Environment card: [engine/src/crucible/envs/incident/README.md](engine/src/crucible/envs/incident/README.md).
 Harbor run details: [docs/harbor-runs.md](docs/harbor-runs.md).
 
+## Application-backed environments
+
+`fleetbase_dispatch@1` operates native Fleetbase orders with private deterministic
+physical verification. It starts fresh from main; the old dispatch environments
+are not included. See its [environment card](engine/src/crucible/envs/fleetbase_dispatch/README.md),
+the [implementation plan](docs/plans/fleetbase-backend.md), and
+[deployment validation](docs/fleetbase-validation.md).
+`backend_probe@1` is the small external FastAPI infrastructure fixture.
+
 ## Quickstart
 
 You need [uv](https://docs.astral.sh/uv/). This runs the small `guess@1` environment in process:

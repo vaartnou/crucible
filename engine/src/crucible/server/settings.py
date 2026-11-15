@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     sidecar_task: str = "incident@1"
     sidecar_seed: int = 0
     sidecar_salt: str | None = None
+    spectator_path: Path | None = None
+    spectator_run_id: str = ""
+    spectator_strategy: str = "external"
 
 
 __all__ = ["Settings"]

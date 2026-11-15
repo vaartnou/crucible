@@ -25,6 +25,7 @@ from crucible.core.transcript import StopReason, TranscriptWriter, read_transcri
 from crucible.server.logging import configure_logging
 from crucible.server.mcp import build_mcp_server
 from crucible.server.settings import Settings
+from crucible.server.spectator import Spectator
 from crucible.server.store import Entry, InMemorySessionStore, SessionStore
 
 
@@ -70,7 +71,8 @@ def _add_api_routes(
 ) -> None:
     """The `/v1` routes (api mode)."""
 
-    def entry_for(episode_id: str) -> Entry:
+    async def entry_for(episode_id: str) -> Entry:
+        await sessions.expire()
         entry = sessions.get(episode_id)
         if entry is None:
             raise HTTPException(404, detail="Unknown episode")
@@ -99,19 +101,27 @@ def _add_api_routes(
         path: Path = settings.runs_dir / "episodes" / f"{episode_id}.jsonl"
         session = EpisodeSession(task, body.seed, TranscriptWriter(path))
         job = Job(task=task.spec.ref, policy="external", seed=body.seed, repeat=0)
-        observation = await session.start(policy_name="external", job=job)
-        sessions.put(episode_id, Entry(session))
+        try:
+            observation = await session.start(policy_name="external", job=job)
+            instruction = task.instruction()
+            sessions.put(episode_id, Entry(session))
+        except BaseException as exc:
+            try:
+                await session.close(type(exc).__name__)
+            except Exception:
+                logger.exception("Failed to finalize episode after startup failure")
+            raise
         logger.info("episode started", extra={"episode_id": episode_id})
         return StartResponse(
             episode_id=episode_id,
-            instruction=task.instruction(),
+            instruction=instruction,
             observation=observation,
             max_steps=session.max_steps,
         )
 
     @app.post("/v1/episodes/{episode_id}/step")
     async def step(episode_id: str, call: ToolCall) -> ToolResult:  # pyright: ignore[reportUnusedFunction]
-        entry = entry_for(episode_id)
+        entry = await entry_for(episode_id)
         async with entry.lock:
             result = await entry.session.step(call)
         logger.info("step", extra={"episode_id": episode_id, "tool": call.name, "ok": result.ok})
@@ -119,7 +129,7 @@ def _add_api_routes(
 
     @app.post("/v1/episodes/{episode_id}/close")
     async def close(episode_id: str) -> CloseResponse:  # pyright: ignore[reportUnusedFunction]
-        entry = entry_for(episode_id)
+        entry = await entry_for(episode_id)
         async with entry.lock:
             reason, score = await entry.session.close()
             steps = entry.session.steps_used
@@ -136,6 +146,8 @@ class GradeResponse(BaseModel):
     steps: int
     stop_reason: StopReason
     transcript: list[dict[str, JsonValue]]
+    evidence: dict[str, JsonValue] = Field(default_factory=dict)
+    cleanup_errors: list[str] = Field(default_factory=list)
 
 
 def _add_sidecar_routes(app: FastAPI, settings: Settings, logger: logging.Logger) -> None:
@@ -145,8 +157,21 @@ def _add_sidecar_routes(app: FastAPI, settings: Settings, logger: logging.Logger
     path = settings.runs_dir / "episodes" / f"sidecar-{task.spec.ref}-{seed}.jsonl"
     session = EpisodeSession(task, seed, TranscriptWriter(path), salt=settings.sidecar_salt)
     lock = asyncio.Lock()
+    spectator = (
+        Spectator(
+            settings.spectator_path,
+            task,
+            seed,
+            settings.sidecar_salt or "",
+            settings.spectator_run_id,
+            settings.spectator_strategy,
+        )
+        if settings.spectator_path
+        else None
+    )
+    app.state.spectator = spectator
     manager = StreamableHTTPSessionManager(
-        build_mcp_server(session, lock), json_response=True, stateless=True
+        build_mcp_server(session, lock, spectator), json_response=True, stateless=True
     )
     app.state.sidecar_session = session
     app.state.mcp_manager = manager
@@ -163,6 +188,8 @@ def _add_sidecar_routes(app: FastAPI, settings: Settings, logger: logging.Logger
         async with lock:
             reason, score = await session.close()
             steps = session.steps_used
+            if spectator:
+                spectator.finalize(reason, score)
         transcript = read_transcript(path)
         records = [transcript.header, *transcript.steps, transcript.footer]
         logger.info("episode graded")
@@ -176,6 +203,8 @@ def _add_sidecar_routes(app: FastAPI, settings: Settings, logger: logging.Logger
                 steps=steps,
                 stop_reason=reason,
                 transcript=[r.model_dump(mode="json") for r in records],
+                evidence=task.grading_evidence(),
+                cleanup_errors=list(session.cleanup_errors),
             ).model_dump(mode="json")
         )
 
@@ -193,19 +222,38 @@ def create_app(settings: Settings | None = None, store: SessionStore | None = No
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         if settings.mode != "sidecar":
-            yield
+
+            async def sweep() -> None:
+                while True:
+                    await asyncio.sleep(min(30.0, settings.session_ttl_seconds / 2))
+                    await sessions.expire()
+
+            sweeper = asyncio.create_task(sweep())
+            try:
+                yield
+            finally:
+                sweeper.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await sweeper
+                await sessions.aclose()
             return
         session: EpisodeSession = app.state.sidecar_session
         manager: StreamableHTTPSessionManager = app.state.mcp_manager
         job = Job(task=session.task.spec.ref, policy="external", seed=settings.sidecar_seed)
-        await session.start(policy_name="external", job=job)
+        error: str | None = None
         try:
+            await session.start(policy_name="external", job=job)
             async with manager.run():
                 yield
+        except BaseException as exc:
+            error = type(exc).__name__
+            raise
         finally:
             # Drop a half-written transcript if nobody graded the episode.
             if not session.closed:
-                await session.close()
+                reason, score = await session.close()
+                if app.state.spectator:
+                    app.state.spectator.finalize(reason, score)
 
     app = FastAPI(
         title="Crucible",

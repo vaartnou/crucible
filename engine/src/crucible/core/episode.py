@@ -1,5 +1,6 @@
 """The one episode loop."""
 
+import logging
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
@@ -31,6 +32,7 @@ class EpisodeResult(BaseModel):
     stop_reason: StopReason
     transcript_path: Path
     retried: int = 0
+    cleanup_errors: tuple[str, ...] = ()
 
 
 async def _play(session: EpisodeSession, policy: Policy, job: Job) -> None:
@@ -76,8 +78,16 @@ async def run_episode(
         except Exception as exc:
             error = _name(exc)
             reason, score = await session.close(error)
-    except BaseException:
-        writer.abort()
+    except BaseException as exc:
+        try:
+            await session.close(type(exc).__name__)
+        except Exception:
+            logging.getLogger(__name__).exception("Episode finalization failed after primary error")
+        finally:
+            writer.abort()
+            # Retryable attempts must not be mistaken for resumable completed jobs.
+            if isinstance(exc, InfraError) and not record_infra_errors:
+                writer.path.unlink(missing_ok=True)
         raise
     return EpisodeResult(
         job=job,
@@ -88,6 +98,7 @@ async def run_episode(
         steps=writer.step_count,
         stop_reason=reason,
         transcript_path=writer.path,
+        cleanup_errors=tuple(session.cleanup_errors),
     )
 
 

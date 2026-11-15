@@ -53,9 +53,10 @@ class SupplyEnv:
         salt: str = "",
         price_lo: float = 9.6,
         price_hi: float = 10.4,
+        world: World | None = None,
     ):
         assert signals in ("full", "no_news", "none", "placebo")
-        self.world = make_world(world_seed, price_lo, price_hi)
+        self.world = world if world is not None else make_world(world_seed, price_lo, price_hi)
         self.salt = salt
         self.rate_scale, self.k, self.signals, self.horizon = (
             rate_scale,
@@ -92,6 +93,7 @@ class SupplyEnv:
         self.last_news = np.full(len(REGIONS), -60.0)
         self.rum_active = []  # rumors visible & unresolved: dict
         self.ctrl = np.zeros(ACT_DIM)
+        self.replenishment = "ss"
         self.tot = dict(
             profit=0.0,
             revenue=0.0,
@@ -152,10 +154,16 @@ class SupplyEnv:
         w[act] = self.cap[act]
         return w / w.sum()
 
-    def _pipeline(self):
-        # the buyer believes the full ORDERED quantity is coming until the nominal ETA passes; afterwards only what really ships
+    def _pipeline(self, fill_adjusted=False):
+        # Before acknowledgment, estimate receipts from ordered quantities. Afterward use
+        # acknowledged quantities. Apply the fill estimate only to unacknowledged orders.
         d = self.day
-        return sum(o["ordered"] if d < o["rev"] else o["qty"] for o in self.orders)
+        if not fill_adjusted:
+            return sum(o["ordered"] if d < o["rev"] else o["qty"] for o in self.orders)
+        return sum(
+            o["ordered"] * self.fill[o["sup"]] if d < o["rev"] else o["qty"]
+            for o in self.orders
+        )
 
     def lbar(self, act):
         bw = self._base_w(act)
@@ -173,31 +181,36 @@ class SupplyEnv:
         return a
 
     # ------------------------------------------------------------------ daily dynamics
+    def regular_receipt(self, supplier, nominal, delay):
+        return nominal, nominal + delay
+
+    def reported_arrival(self, order):
+        return order["arr"]
+
     def _place_orders(self, ctrl, day_costs):
         act = self.active()
         bw = self._base_w(act)
         d = self.day
+        ss_days = 3.0 * max(0.0, ctrl[13])
         if ctrl[16] > 0.5:
-            ss_days = 3.0 * max(0.0, ctrl[13])
             Q = DEMAND_MEAN + max(0.0, ss_days * DEMAND_MEAN - self.onhand) / 3.0
-            Q = min(Q, 3 * DEMAND_MEAN)
-            logits = np.log(bw[act]) + SHARE_SCALE * ctrl[: self.NS][act]
-            e = np.exp(logits - logits.max())
-            shares = e / e.sum()
-            exp_f = 0.3 * max(0.0, ctrl[14])
         else:
-            ss_days = 3.0 * max(0.0, ctrl[13])
             s_lvl, S_up = self.levels(act, ss_days)
-            ip = self.onhand + self._pipeline()
-            Q = (S_up - ip) if ip <= s_lvl else 0.0
+            ip = self.onhand + self._pipeline(self.replenishment == "fill_adjusted_base_stock")
+            if self.replenishment == "ss":
+                Q = (S_up - ip) if ip <= s_lvl else 0.0
+            elif self.replenishment == "fixed_lot":
+                Q = DEMAND_MEAN if ip <= s_lvl else 0.0
+            else:
+                Q = max(0.0, s_lvl - ip)
             Q = max(0.0, Q) * math.exp(0.5 * ctrl[12])
-            Q = min(Q, 3 * DEMAND_MEAN)
-            logits = np.log(bw[act]) + SHARE_SCALE * ctrl[: self.NS][act]
-            e = np.exp(logits - logits.max())
-            shares = e / e.sum()
-            exp_f = 0.3 * max(0.0, ctrl[14])
+        Q = min(Q, 3 * DEMAND_MEAN)
         if Q < 0.5:
             return
+        logits = np.log(bw[act]) + SHARE_SCALE * ctrl[: self.NS][act]
+        e = np.exp(logits - logits.max())
+        shares = e / e.sum()
+        exp_f = 0.3 * max(0.0, ctrl[14])
         H = self.tape.H[d]
         for j, i in enumerate(act):
             q = int(round(Q * shares[j]))
@@ -223,11 +236,12 @@ class SupplyEnv:
                         ordered=0,
                     )
                 )
+            booked, arrival = self.regular_receipt(i, nominal, delay)
             self.orders.append(
                 dict(
                     sup=int(i),
-                    arr=nominal + delay,
-                    nom=nominal,
+                    arr=arrival,
+                    nom=booked,
                     rev=min(nominal, d + ACK_DAYS),
                     qty=qn,
                     ordered=q - qe if qe else q,
@@ -407,7 +421,7 @@ class SupplyEnv:
             units = sum(o["ordered"] if d < o["rev"] else o["qty"] for o in pend) / (
                 dl * max(1, self.lead[i]) / 3.0
             )
-            nxt = min([o["arr"] - d for o in pend], default=30) / 30.0
+            nxt = min([self.reported_arrival(o) - d for o in pend], default=30) / 30.0
             late = sum(1 for o in pend if o["nom"] < d) / 5.0 if self.use_ops else 0.0
             risk = self.risk[i] if self.use_ops else 0.0
             # fill signal: share of nominal-ETA-passed orders still outstanding is exposed via `late`

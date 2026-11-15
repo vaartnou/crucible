@@ -11,12 +11,12 @@ from typing import Any
 from crucible.core.registry import register_policy
 from crucible.core.task import TaskSpec
 from crucible.core.tools import Observation, ToolCall, ToolSpec
-from crucible.envs.supplygym.policies.reference import Decider, make_decider
+from crucible.envs.supplygym.policies.reference import CALA_REFERENCE, Decider, make_decider
 from crucible.envs.supplygym.policies.views import call, parse_status
 
 SUPPLIERS = [f"S{k:02d}" for k in range(1, 11)]
-# Both regimes share their policies; the reference was trained on `supplygym` only.
-TASK_IDS = ("supplygym", "supplygym-fresh")
+# The legacy regimes retain their checkpoint; Cala has its own frozen reference.
+TASK_IDS = ("supplygym", "supplygym-fresh", "supplygym-cala")
 
 
 def _register[T](name: str) -> Callable[[T], T]:
@@ -40,11 +40,15 @@ class _Loop:
         self._weeks = 0
         self._started = False
         self._decider: Decider | None = None
+        self._reference = "ppo"
 
     def _make(self) -> Decider:
         raise NotImplementedError
 
     async def reset(self, task_spec: TaskSpec, tools: list[ToolSpec], instruction: str) -> None:
+        self._reference = CALA_REFERENCE if task_spec.id == "supplygym-cala" else "ppo"
+        if task_spec.version >= 2:
+            self._reference = "availability"
         self._weeks, self._started, self._decider = 0, False, self._make()
 
     async def act(self, obs: Observation) -> ToolCall | None:
@@ -82,7 +86,7 @@ class StopEarly(_Loop):
     weeks_limit = 4
 
     def _make(self) -> Decider:
-        return make_decider("ppo")
+        return make_decider(self._reference)
 
 
 class _Fixed:
@@ -91,6 +95,31 @@ class _Fixed:
 
     def decide(self, status: dict[str, Any]) -> dict[str, Any]:
         return dict(self.args)
+
+
+class _ReplenishmentFormula(_Loop):
+    async def reset(self, task_spec: TaskSpec, tools: list[ToolSpec], instruction: str) -> None:
+        if task_spec.version < 2:
+            raise ValueError("Replenishment formulas require a SupplyGym version 2 task")
+        await super().reset(task_spec, tools, instruction)
+
+    def _make(self) -> Decider:
+        return _Fixed({"replenishment": self.name})
+
+
+@_register("base_stock")
+class BaseStock(_ReplenishmentFormula):
+    name = "base_stock"
+
+
+@_register("fixed_lot")
+class FixedLot(_ReplenishmentFormula):
+    name = "fixed_lot"
+
+
+@_register("fill_adjusted_base_stock")
+class FillAdjustedBaseStock(_ReplenishmentFormula):
+    name = "fill_adjusted_base_stock"
 
 
 @_register("max_expedite")
@@ -108,4 +137,27 @@ class Reference(_Loop):
     name = "reference"
 
     def _make(self) -> Decider:
+        return make_decider(self._reference)
+
+
+@register_policy("transfer_ppo", "supplygym-cala")
+class TransferPpo(_Loop):
+    """The original checkpoint evaluated on the same Cala tape for transfer comparison."""
+
+    name = "transfer_ppo"
+
+    def _make(self) -> Decider:
         return make_decider("ppo")
+
+
+@register_policy("availability", "supplygym-cala")
+class Availability(_Loop):
+    """Diagnostic reallocation using acknowledged fill and the public risk score."""
+
+    name = "availability"
+
+    def _make(self) -> Decider:
+        return make_decider("availability")
+
+    def decide(self, status: dict[str, Any]) -> dict[str, Any]:
+        return make_decider("availability").decide(status)

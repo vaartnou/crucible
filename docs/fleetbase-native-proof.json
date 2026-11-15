@@ -1,0 +1,24 @@
+{
+  "kind": "native-adapter-infrastructure-proof",
+  "date": "2026-11-14",
+  "api_image": "fleetbase/fleetbase-api@sha256:75ede1bfd007ce31ac663f5438688baa802a9314399acc30254d4834e346e706",
+  "fleetops": "0.6.75@811aa711a68833dfd8390d8ddac582d4ed75f3c6",
+  "core_api": "1.6.74@ac97b5620b260660ae4e6fd5ea0e64025629b0c9",
+  "native_status": "completed",
+  "duplicate_physical_event_sync": "passed",
+  "repeated_cleanup": "passed",
+  "active_counts_after": {
+    "orders": 0,
+    "payloads": 0,
+    "entities": 0,
+    "waypoints": 0,
+    "tracking_numbers": 0,
+    "tracking_statuses": 0,
+    "places": 0,
+    "drivers": 0,
+    "vehicles": 0,
+    "users": 1
+  },
+  "validation_limit": "Native workflow and resource cleanup only. No earned-value or model-performance assertion.",
+  "count_helper_sha256": "13bc7f12c724ff404b161d33a696c5f2c96b30eff97d7e43113df6e9b3e36e3d"
+}

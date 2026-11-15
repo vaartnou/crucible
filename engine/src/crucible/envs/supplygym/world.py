@@ -83,7 +83,11 @@ class World:
         return len(self.nodes)
 
     def region_nodes(self, region):
-        return [i for i, n in enumerate(self.nodes) if n["region"] == region]
+        return [
+            i
+            for i, n in enumerate(self.nodes)
+            if n["region"] == region and n.get("regional_exposure", True)
+        ]
 
     def public(self):
         """What an agent may know: direct + alternative suppliers only (tier 2/3 stay hidden)."""
@@ -256,12 +260,25 @@ class Tape:
 
 def _health(world: World, S: np.ndarray) -> np.ndarray:
     H = 1.0 - S
-    for lvl in (range(N_DIRECT + N_ALT, N_DIRECT + N_ALT + N_T2), range(N_DIRECT + N_ALT)):
-        for i in lvl:
-            loss = np.zeros(S.shape[0])
-            for p, w in world.parents[i]:
-                loss += w * (1.0 - H[:, p])
+    done, active = set(), set()
+
+    def resolve(i):
+        if i in done:
+            return
+        if i in active:
+            raise ValueError("supplier graph must be acyclic")
+        active.add(i)
+        loss = np.zeros(S.shape[0])
+        for p, w in world.parents.get(i, []):
+            resolve(p)
+            loss += w * (1.0 - H[:, p])
+        if world.parents.get(i):
             H[:, i] = (1.0 - S[:, i]) * np.clip(1.0 - GAMMA_PROP * loss, 0.0, 1.0)
+        active.remove(i)
+        done.add(i)
+
+    for i in range(world.n):
+        resolve(i)
     return H
 
 
@@ -323,7 +340,7 @@ def make_tape(
     events.sort(key=lambda e: (e["start"], e["id"]))
     for k, e in enumerate(events):
         e["id"] = k
-    S = np.zeros((T, N_NODES))
+    S = np.zeros((T, world.n))
     for e in events:
         a, b = e["start"], min(e["end"], T)
         for n in e["nodes"]:

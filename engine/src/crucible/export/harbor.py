@@ -16,7 +16,7 @@ from importlib.resources import files
 from importlib.resources.abc import Traversable
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, JsonValue
 
 from crucible.core.registry import get_task
 from crucible.core.task import TaskSpec
@@ -194,6 +194,9 @@ def export_harbor(
         raise ExportError("seeds repeat")
     task = get_task(task_ref)
     spec = task.spec
+    bundle = task.deployment_bundle()
+    if bundle is not None:
+        bundle.validate()
     ref = spec.ref
     instruction = task.instruction().strip()
     keywords = "[" + ", ".join(_toml_str(k) for k in _keywords(spec)) + "]"
@@ -232,9 +235,26 @@ def export_harbor(
         for vendor in ("environment/mcp-server", "solution"):
             shutil.copyfile(artifacts.wheel, folder / vendor / artifacts.wheel.name)
             shutil.copyfile(artifacts.requirements, folder / vendor / "requirements.txt")
+        if bundle is not None:
+            bundle.compose(folder / "environment")
+            verifier = folder / "tests/test.sh"
+            verifier.write_text(
+                verifier.read_text().replace(
+                    '    write("transcript.json",',
+                    '    write("evidence.json", json.dumps(body.get("evidence", {}), indent=2))\n'
+                    '    write("transcript.json",',
+                )
+            )
+            verifier.write_text(
+                verifier.read_text().replace(
+                    '    write("grade.json",',
+                    '    summary["cleanup_errors"] = body.get("cleanup_errors", [])\n'
+                    '    write("grade.json",',
+                )
+            )
         folders.append(folder)
 
-    manifest = {
+    manifest: dict[str, JsonValue] = {
         "task_ref": ref,
         "seeds": list(seeds),
         "solution_policy": solution_policy,
@@ -244,5 +264,10 @@ def export_harbor(
         "wheel_sha256": hashlib.sha256(wheel_bytes).hexdigest(),
         "tasks": [f.name for f in folders],
     }
+    if bundle is not None:
+        manifest["deployment"] = bundle.fingerprint()
+        manifest["requirements_sha256"] = hashlib.sha256(
+            artifacts.requirements.read_bytes()
+        ).hexdigest()
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     return folders
