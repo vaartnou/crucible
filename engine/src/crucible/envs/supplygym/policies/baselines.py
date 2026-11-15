@@ -46,6 +46,7 @@ class _Loop:
         self._started = False
         self._decider: Decider | None = None
         self._reference = "ppo"
+        self._has_finish = True
 
     def _make(self) -> Decider:
         raise NotImplementedError
@@ -56,6 +57,7 @@ class _Loop:
             self._reference = "availability"
         if task_spec.id == "supplygym-cala" and task_spec.version == 3:
             self._reference = CALA_SERVICE_REFERENCE
+        self._has_finish = any(t.name == "finish" for t in tools)
         self._weeks, self._started, self._decider = 0, False, self._make()
 
     async def act(self, obs: Observation) -> ToolCall | None:
@@ -68,7 +70,7 @@ class _Loop:
         if isinstance(r.content, dict) and r.content.get("episode_over"):
             return None
         if self.weeks_limit is not None and self._weeks >= self.weeks_limit:
-            return call("finish")
+            return call("finish") if self._has_finish else None
         assert self._decider is not None
         status = json.loads(json.dumps(parse_status(r).model_dump(mode="json")))
         self._weeks += 1
