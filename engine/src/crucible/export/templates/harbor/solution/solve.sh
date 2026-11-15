@@ -14,5 +14,7 @@ fi
 uv venv /tmp/crucible-solution --python 3.14 --quiet
 uv pip install --python /tmp/crucible-solution --quiet \
   -r "$SOLUTION_DIR/requirements.txt" "$SOLUTION_DIR/@@WHEEL_NAME@@"
+
+# Oracle entry point (replaced by the Cala live probe).
 /tmp/crucible-solution/bin/crucible play --mcp http://mcp-server:8000/mcp --policy "$POLICY" \
   --task "@@TASK_REF@@"

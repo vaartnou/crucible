@@ -8,17 +8,20 @@ import argparse
 import asyncio
 import getpass
 import json
+import math
 import os
 import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 import yaml
 
 from crucible.core.jobs import Job
 from crucible.core.registry import get_policy, get_task
+from crucible.core.scoring import Score
 from crucible.core.session import EpisodeSession
 from crucible.core.tools import Observation, result_text
 from crucible.core.transcript import TranscriptWriter
@@ -33,7 +36,15 @@ from crucible.export.harbor import (
 from crucible.server.spectator import Spectator
 
 TASK = "supplygym-cala@3"
-BASELINES = ("ss", "base_stock", "fixed_lot", "fill_adjusted_base_stock")
+INCOMPLETE_BASELINES = ("do_nothing", "stop_early")
+BASELINES = (
+    "reference",
+    "ss",
+    "base_stock",
+    "fixed_lot",
+    "fill_adjusted_base_stock",
+    *INCOMPLETE_BASELINES,
+)
 
 
 def configure_spectator(
@@ -83,7 +94,7 @@ async def run_baseline(seed: int, salt: str, policy_name: str, output: Path, run
             obs = Observation(text=result_text(result), last_result=result)
         reason, score = await session.close()
         spectator.finalize(reason, score)
-        if not score.flags.get("completed"):
+        if policy_name not in INCOMPLETE_BASELINES and not score.flags.get("completed"):
             raise RuntimeError(f"Policy {policy_name} did not complete seed {seed}")
         return {
             "seed": seed,
@@ -98,84 +109,116 @@ async def run_baseline(seed: int, salt: str, policy_name: str, output: Path, run
         raise
 
 
-def collect_results(out: Path, bounds: dict[int, float]) -> bool:
+def read_events(path: Path) -> list[dict[str, Any]]:
+    events = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.strip():
+            event = json.loads(line)
+            if not isinstance(event, dict):
+                raise ValueError("Expected a JSON object in the spectator stream")
+            events.append(event)
+    return events
+
+
+def verify_trial(
+    out: Path, seed: int, bound: float, trial: Path
+) -> tuple[dict[str, Any], dict[str, Score]]:
+    result = json.loads(trial.read_text(encoding="utf-8"))
+    if result.get("exception_info"):
+        return {"status": "trial_error"}, {}
+
+    trace = (trial.parent / "verifier" / "transcript.json").read_text(encoding="utf-8")
+    transcript = json.loads(trace) if trace.strip() else []
+    streams = {"opencode": out / "live" / f"seed-{seed}" / "events.jsonl"}
+    streams.update(
+        {
+            policy: out / "baselines" / f"seed-{seed}" / policy / "events.jsonl"
+            for policy in BASELINES
+        }
+    )
+    finals = {}
+    identities = set()
+    for strategy, path in streams.items():
+        events = read_events(path)
+        endings = [event for event in events if event.get("event") == "final"]
+        if len(endings) != 1:
+            return {"status": "missing_verified_result"}, {}
+        finals[strategy] = endings[0]
+        identities.update(event.get("scenario_comparison_id") for event in events)
+
+    if not transcript:
+        return {"status": "missing_verified_result"}, {}
+    if len(identities) != 1 or None in identities:
+        return {"status": "realization_mismatch"}, {}
+
+    live = finals["opencode"]
+    scores = {strategy: Score.model_validate(event["score"]) for strategy, event in finals.items()}
+    if any(
+        scores[strategy].breakdown.get("surplus_upper_bound") != bound
+        or event["scorer_version"] != live["scorer_version"]
+        or event["simulator_version"] != live["simulator_version"]
+        for strategy, event in finals.items()
+    ):
+        return {"status": "scoring_configuration_mismatch"}, {}
+    if transcript[-1]["score"] != live["score"]:
+        return {"status": "verifier_score_mismatch"}, {}
+    if any(
+        not 0 <= score.total <= 1
+        or "operating_surplus" not in score.breakdown
+        or not all(map(math.isfinite, score.breakdown.values()))
+        for score in scores.values()
+    ):
+        return {"status": "invalid_trial_artifacts"}, {}
+    return {
+        "status": "verified",
+        "score": scores["opencode"].model_dump(mode="json"),
+        "trial": str(trial.parent),
+        "scenario_comparison_id": next(iter(identities)),
+    }, scores
+
+
+def collect_results(out: Path, bounds: dict[int, float], harbor_exit_code: int = 0) -> bool:
     """Report only verified trials whose event identity matches the local realization."""
-    seeds = list(bounds)
     rows = []
-    for seed in seeds:
+    verified_scores = []
+    for seed, bound in bounds.items():
         name = task_folder_name(TASK, seed)
         trials = list((out / "jobs" / "opencode").glob(f"{name}__*/result.json"))
-        row = {"seed": seed, "status": "missing_or_ambiguous_trial"}
+        row = {"status": "missing_or_ambiguous_trial"}
         if len(trials) == 1:
-            trial = trials[0]
-            result = json.loads(trial.read_text(encoding="utf-8"))
-            trace = trial.parent / "verifier" / "transcript.json"
-            events = out / "live" / f"seed-{seed}" / "events.jsonl"
-            live = [
-                json.loads(line) for line in events.read_text(encoding="utf-8").splitlines() if line
-            ]
-            local_finals = []
-            for policy in BASELINES:
-                local_path = out / "baselines" / f"seed-{seed}" / policy / "events.jsonl"
-                local_finals.extend(
-                    event
-                    for line in local_path.read_text(encoding="utf-8").splitlines()
-                    if line and (event := json.loads(line))["event"] == "final"
-                )
-            finals = [event for event in live if event.get("event") == "final"]
-            identities = {event.get("scenario_comparison_id") for event in live + local_finals}
-            if result.get("exception_info"):
-                row["status"] = "trial_error"
-            elif not trace.is_file() or len(finals) != 1 or len(local_finals) != len(BASELINES):
-                row["status"] = "missing_verified_result"
-            elif len(identities) != 1 or None in identities:
-                row["status"] = "realization_mismatch"
-            elif any(
-                event["score"]["breakdown"].get("surplus_upper_bound") != bounds[seed]
-                or event["scorer_version"] != finals[0]["scorer_version"]
-                or event["simulator_version"] != finals[0]["simulator_version"]
-                for event in [*local_finals, *finals]
-            ):
-                row["status"] = "scoring_configuration_mismatch"
-            elif json.loads(trace.read_text(encoding="utf-8"))[-1]["score"] != finals[0]["score"]:
-                row["status"] = "verifier_score_mismatch"
+            try:
+                row, scores = verify_trial(out, seed, bound, trials[0])
+            except FileNotFoundError:
+                row = {"status": "missing_verified_result"}
+            except (OSError, ValueError, KeyError, TypeError, AttributeError):
+                row = {"status": "invalid_trial_artifacts"}
             else:
-                row.update(
-                    status="verified",
-                    score=finals[0]["score"],
-                    trial=str(trial.parent),
-                    scenario_comparison_id=next(iter(identities)),
-                )
-        rows.append(row)
-    valid = all(row["status"] == "verified" for row in rows)
-    report = {"task": TASK, "scenarios": rows, "valid_for_comparison": valid}
+                if scores:
+                    verified_scores.append(scores)
+        rows.append({"seed": seed, **row})
+
+    valid = bool(bounds) and harbor_exit_code == 0 and len(verified_scores) == len(bounds)
+    report = {
+        "task": TASK,
+        "scenarios": rows,
+        "harbor_exit_code": harbor_exit_code,
+        "valid_for_comparison": valid,
+    }
     if valid:
-        baseline_scores = json.loads((out / "baseline-scores.json").read_text(encoding="utf-8"))
-        aggregates = {}
-        for policy in BASELINES:
-            scores = [row["score"] for row in baseline_scores if row["policy"] == policy]
-            if len(scores) != len(seeds):
-                raise ValueError(f"Missing baseline scores for {policy}")
-            aggregates[policy] = {
-                "mean_score": sum(score["total"] for score in scores) / len(seeds),
+        report["aggregates"] = {
+            strategy: {
+                "mean_score": sum(row[strategy].total for row in verified_scores) / len(bounds),
                 "mean_operating_surplus_usd": sum(
-                    score["breakdown"]["operating_surplus"] for score in scores
+                    row[strategy].breakdown["operating_surplus"] for row in verified_scores
                 )
-                / len(seeds),
+                / len(bounds),
             }
-        scores = [row["score"] for row in rows]
-        aggregates["opencode"] = {
-            "mean_score": sum(score["total"] for score in scores) / len(seeds),
-            "mean_operating_surplus_usd": sum(
-                score["breakdown"]["operating_surplus"] for score in scores
-            )
-            / len(seeds),
+            for strategy in (*BASELINES, "opencode")
         }
-        report["aggregates"] = aggregates
     (out / "report.json").write_text(
         json.dumps(report, indent=2, allow_nan=False) + "\n", encoding="utf-8"
     )
-    return report["valid_for_comparison"]
+    return valid
 
 
 def parse_args() -> argparse.Namespace:
@@ -206,8 +249,8 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def harbor_command(args: argparse.Namespace, out: Path) -> list[str]:
-    """Schedule the whole dataset; concurrency is not a task limit."""
+def harbor_command(args: argparse.Namespace, out: Path, key: str) -> list[str]:
+    """Build the execution argv, including the credential for the agent container."""
     return [
         args.harbor,
         "run",
@@ -223,6 +266,8 @@ def harbor_command(args: argparse.Namespace, out: Path) -> list[str]:
         "disable_web_search=true",
         "--api-key-name",
         args.key_env,
+        "--ae",
+        f"{args.key_env}={key}",
         "-o",
         str(out / "jobs"),
         "--job-name",
@@ -230,6 +275,22 @@ def harbor_command(args: argparse.Namespace, out: Path) -> list[str]:
         "-n",
         str(args.concurrency),
     ]
+
+
+def run_harbor(command: list[str], env: dict[str, str], key: str) -> int:
+    """Relay Harbor diagnostics with the provider credential redacted."""
+    with subprocess.Popen(
+        command,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        encoding="utf-8",
+        errors="replace",
+    ) as process:
+        assert process.stdout is not None
+        for line in process.stdout:
+            print(line.replace(key, "<redacted>"), end="", flush=True)
+        return process.wait()
 
 
 async def run(args: argparse.Namespace) -> int:
@@ -308,18 +369,19 @@ async def run(args: argparse.Namespace) -> int:
     )
     child_env = os.environ.copy()
     child_env[args.key_env] = key
-    command = harbor_command(args, out)
     print(f"Starting Harbor for {len(seeds)} seeds; artifacts: {out}", flush=True)
-    result = await asyncio.to_thread(subprocess.run, command, env=child_env, check=False)
-    if result.returncode:
+    exit_code = await asyncio.to_thread(
+        run_harbor, harbor_command(args, out, key), child_env, key
+    )
+    if exit_code:
         print(
-            f"Harbor failed with exit code {result.returncode}; inspect {out / 'jobs'}",
+            f"Harbor failed with exit code {exit_code}; inspect {out / 'jobs'}",
             file=sys.stderr,
         )
-    valid = collect_results(out, bounds)
+    valid = collect_results(out, bounds, exit_code)
     if not valid:
         print(f"Some trials are unresolved; inspect {out / 'report.json'}", file=sys.stderr)
-    return result.returncode or (0 if valid else 1)
+    return exit_code or (0 if valid else 1)
 
 
 def main() -> None:

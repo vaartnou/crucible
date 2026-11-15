@@ -22,15 +22,16 @@ Harbor's verifier result.
 
 Run from the worktree root in Bash or WSL with Docker Desktop running, Harbor
 installed, and Python dependencies available through `uv`. Pick a new output
-directory. This example requests three seeds starting at 62000, OpenCode with
-Gemini 4 Hydrogen, and two concurrent trials.
+directory. Set `OPENCODE_MODEL` to a `provider/model` available to your Google
+API key. This example runs three seeds starting at 62000 with two concurrent
+trials.
 
 ```bash
 uv sync --directory engine --locked
 uv run --directory engine python scripts/run_cala_demo.py \
   --out ../runs/cala-demo \
   --start-seed 62000 --count 3 \
-  --model google/gemini-4-hydrogen \
+  --model "$OPENCODE_MODEL" \
   --key-env GOOGLE_GENERATIVE_AI_API_KEY --prompt-key \
   --concurrency 2
 ```
@@ -45,8 +46,9 @@ Use concurrency 1 for a stage run focused on a single seed.
 The runner writes `surplus-bounds.json` before any strategy plays. The simulator
 independently recomputes each bound on reset, so a standalone Harbor export needs
 only the task files to run and score. After Harbor finishes, `report.json`
-contains the verified results and, when all scheduled results are available, the
-mean score and mean operating surplus for each strategy.
+contains the Harbor exit code and per-seed verification status. When Harbor
+succeeds and all scheduled results verify, it includes the mean score and mean
+operating surplus for each strategy.
 
 For a standard Harbor evaluation package without host-mounted spectator files,
 export the same task version directly.
@@ -60,17 +62,19 @@ uv run --directory engine crucible export harbor \
 
 The trusted demo host reads append-only JSONL from the viewer output directory.
 The Docker sidecar writes and flushes the live file while Harbor is running.
-The four deterministic files are computed before the live run. Share only
+The deterministic runs finish before the live run. They include `reference`,
+`ss`, `base_stock`, `fixed_lot`, `fill_adjusted_base_stock`, `do_nothing`, and
+`stop_early`. The last two stop before completing the year and score zero. Share only
 the viewer's public data with the presentation layer. The Harbor export,
 verifier credentials and scenario salts belong to the evaluator.
 
-`spectator-manifest.json` lists each public comparison ID and the five relative
+`spectator-manifest.json` lists each public comparison ID and the relative
 event paths. Live events are in `live/seed-<seed>/events.jsonl`. Baselines are in
 `baselines/seed-<seed>/<strategy>/events.jsonl`.
 
 The common event envelope has `schema_version`, `run_id`, `strategy`,
 `scenario_comparison_id`, `task`, `simulator_version`, `scorer_version`, and
-`timestamp`. Group the five strategies by `scenario_comparison_id` and key
+`timestamp`. Group strategies by `scenario_comparison_id` and key
 chart points by `(run_id, week)`. A reconnect can read from the beginning and
 upsert those keys. Read only complete newline-terminated records.
 

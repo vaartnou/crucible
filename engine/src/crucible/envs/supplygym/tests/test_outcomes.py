@@ -16,7 +16,7 @@ from crucible.core.tools import Observation, ToolCall
 from crucible.core.transcript import TranscriptWriter, read_transcript
 from crucible.envs.supplygym import scenarios
 from crucible.envs.supplygym.outcomes import RUBRIC, RUBRIC_HASH, OutcomeTask, grade_outcomes
-from crucible.envs.supplygym.play import Play
+from crucible.envs.supplygym.play import CALA_REGIME, Play
 from crucible.envs.supplygym.policies import baselines
 from crucible.envs.supplygym.policies.reference import Decider, make_decider
 from crucible.envs.supplygym.scenarios import Scenario, Suite, aggregate, digest, snapshot
@@ -297,8 +297,8 @@ async def test_cala_upper_bound_is_fixed_and_grading_is_read_only(salt: str) -> 
 
     task = get_task("supplygym-cala@3")
     await task.reset(1000, salt=salt)
-    assert isinstance(task, OutcomeTask) and task._play is not None
-    expected = surplus_upper_bound(task._play) / 100
+    assert isinstance(task, OutcomeTask)
+    expected = surplus_upper_bound(Play(1000, CALA_REGIME, salt)) / 100
     initial = snapshot(task)
     assert expected > 0
     assert (await task.grade()).total == 0

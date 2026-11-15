@@ -9,9 +9,12 @@ import time
 from pathlib import Path
 from typing import Any
 
-from run_cala_demo import configure_spectator
-
 from crucible.export.harbor import build_engine_artifacts, export_harbor
+
+if __package__:
+    from .run_cala_demo import configure_spectator
+else:
+    from run_cala_demo import configure_spectator
 
 TASK = "supplygym-cala@3"
 PROBE = """\
@@ -57,12 +60,12 @@ def install_probe(task: Path) -> None:
     solution = task / "solution"
     script = solution / "solve.sh"
     prefix, marker, _ = script.read_text(encoding="utf-8").partition(
-        "/tmp/crucible-solution/bin/crucible play "
+        "\n# Oracle entry point (replaced by the Cala live probe).\n"
     )
     if not marker:
         raise ValueError("The Harbor template changed. Update the spectator probe.")
     script.write_text(
-        prefix + '/tmp/crucible-solution/bin/python "$SOLUTION_DIR/live_probe.py"\n',
+        prefix + '\n/tmp/crucible-solution/bin/python "$SOLUTION_DIR/live_probe.py"\n',
         encoding="utf-8",
         newline="\n",
     )

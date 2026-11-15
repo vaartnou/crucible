@@ -21,7 +21,7 @@ def _simulator_version() -> dict[str, str]:
     digest = hashlib.sha256()
     for name in ("sim.py", "cala_sim.py", "play.py", "state.py"):
         digest.update(name.encode() + b"\0")
-        digest.update((directory / name).read_bytes())
+        digest.update((directory / name).read_bytes().replace(b"\r\n", b"\n"))
     return {**cala_world_identity(), "implementation_sha256": digest.hexdigest()}
 
 

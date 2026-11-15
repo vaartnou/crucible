@@ -240,14 +240,10 @@ def create_app(settings: Settings | None = None, store: SessionStore | None = No
         session: EpisodeSession = app.state.sidecar_session
         manager: StreamableHTTPSessionManager = app.state.mcp_manager
         job = Job(task=session.task.spec.ref, policy="external", seed=settings.sidecar_seed)
-        error: str | None = None
         try:
             await session.start(policy_name="external", job=job)
             async with manager.run():
                 yield
-        except BaseException as exc:
-            error = type(exc).__name__
-            raise
         finally:
             # Drop a half-written transcript if nobody graded the episode.
             if not session.closed:

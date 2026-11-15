@@ -229,7 +229,11 @@ def export_harbor(
         for rel, resource in templates:
             target = folder / rel
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(_render(resource.read_text(), values))
+            target.write_text(
+                _render(resource.read_text(encoding="utf-8"), values),
+                encoding="utf-8",
+                newline="\n",
+            )
             if rel in _EXECUTABLE:
                 target.chmod(0o755)
         for vendor in ("environment/mcp-server", "solution"):
@@ -239,18 +243,22 @@ def export_harbor(
             bundle.compose(folder / "environment")
             verifier = folder / "tests/test.sh"
             verifier.write_text(
-                verifier.read_text().replace(
+                verifier.read_text(encoding="utf-8").replace(
                     '    write("transcript.json",',
                     '    write("evidence.json", json.dumps(body.get("evidence", {}), indent=2))\n'
                     '    write("transcript.json",',
-                )
+                ),
+                encoding="utf-8",
+                newline="\n",
             )
             verifier.write_text(
-                verifier.read_text().replace(
+                verifier.read_text(encoding="utf-8").replace(
                     '    write("grade.json",',
                     '    summary["cleanup_errors"] = body.get("cleanup_errors", [])\n'
                     '    write("grade.json",',
-                )
+                ),
+                encoding="utf-8",
+                newline="\n",
             )
         folders.append(folder)
 
