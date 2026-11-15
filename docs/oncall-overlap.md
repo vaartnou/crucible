@@ -1,6 +1,6 @@
 # Overlapping incidents: oncall@2
 
-Completed matched comparisons across Gemini Pro, Flash, and Flash-Lite are in
+Completed matched comparisons across Gemini 4 Hydrogen, Pro, Flash, and Flash-Lite are in
 [the model comparison report](oncall-model-comparison.md), including recovery impact separately
 from overall reward and the limits of the observed workflow gap.
 
