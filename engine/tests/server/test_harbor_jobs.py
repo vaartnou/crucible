@@ -20,6 +20,15 @@ def prepare_export(root: Path) -> None:
     (task / "task.toml").write_text('[metadata]\ntask_ref = "oncall@1"\nseed = 0\n')
 
 
+def test_overlap_exports_are_available_to_watch(tmp_path: Path) -> None:
+    prepare_export(tmp_path)
+    task = tmp_path / "overlap-export" / "oncall-2-seed-0"
+    task.mkdir(parents=True)
+    (task / "task.toml").write_text('[metadata]\ntask_ref = "oncall@2"\nseed = 0\n')
+    jobs = HarborJobs(Settings(harbor_exports_dir=tmp_path))
+    assert {row["name"] for row in jobs.exports()} == {"oncall-export", "overlap-export"}
+
+
 async def test_direct_model_sessions_are_rejected(tmp_path: Path) -> None:
     app = create_app(Settings(runs_dir=tmp_path))
     async with httpx.AsyncClient(
@@ -29,14 +38,17 @@ async def test_direct_model_sessions_are_rejected(tmp_path: Path) -> None:
         assert response.status_code == 422
 
 
+@pytest.mark.parametrize(
+    "configured_key", ["", "GOOGLE_GENERATIVE_AI_API_KEY", "CUSTOM_MODEL_API_KEY"]
+)
 async def test_launch_uses_harbor_opencode_docker_and_durable_output(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, configured_key: str
 ) -> None:
     prepare_export(tmp_path / "exports")
     settings = Settings(
         harbor_jobs_dir=tmp_path / "jobs",
         harbor_exports_dir=tmp_path / "exports",
-        harbor_api_key_name="GOOGLE_GENERATIVE_AI_API_KEY",
+        harbor_api_key_name=configured_key,
     )
     monkeypatch.setenv("GOOGLE_GENERATIVE_AI_API_KEY", "secret-test-key-value")
     jobs = HarborJobs(settings)
@@ -60,11 +72,12 @@ async def test_launch_uses_harbor_opencode_docker_and_durable_output(
         ("--model", "google/gemini-3.8-flash"),
         ("--jobs-dir", str(settings.harbor_jobs_dir)),
         ("--job-name", row["id"]),
-        ("--api-key-name", "GOOGLE_GENERATIVE_AI_API_KEY"),
+        ("--api-key-name", configured_key or "GOOGLE_GENERATIVE_AI_API_KEY"),
     ]:
         assert command[command.index(flag) + 1] == value
     assert "--base-url" not in command
     assert "secret-test-key-value" not in command
+    assert command.count("--api-key-name") == 1
     with pytest.raises(HTTPException) as duplicate:
         await jobs.launch(LaunchHarborRequest(export="oncall-export"))
     assert duplicate.value.status_code == 409

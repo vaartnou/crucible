@@ -1,6 +1,6 @@
 """Budgeted public tools for oncall@1."""
 
-from typing import Any, ClassVar, Literal
+from typing import ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
@@ -39,16 +39,11 @@ class EdgesArgs(Args):
     series: bool = False
 
 
-def _optional_enum_schema(schema: dict[str, Any]) -> None:
-    # Omission retains the empty-string default. Gemini rejects empty enum members.
-    schema["enum"] = [value for value in schema["enum"] if value != ""]
-    schema.pop("default", None)
-
-
 class LogsArgs(Args):
     service: str
     query: str = ""
-    level: Literal["", "INFO", "ERROR"] = Field(default="", json_schema_extra=_optional_enum_schema)
+    # Google rejects empty enum members. A pattern preserves the accepted values.
+    level: str = Field(default="", pattern=r"^(INFO|ERROR)?$")
     since: int = Field(default=10, ge=1, le=150)
     page: int = Field(default=0, ge=0, le=100)
 
@@ -59,21 +54,23 @@ class WaitArgs(Args):
 
 class Report(Args):
     service: str = ""
-    fault_kind: Literal[
-        "",
-        "partial_rollout",
-        "config_push",
-        "memory_leak",
-        "pool_exhaustion",
-        "retry_storm",
-        "queue_backlog",
-    ] = Field(default="", json_schema_extra=_optional_enum_schema)
+    fault_kind: str = Field(
+        default="",
+        pattern=(
+            r"^(partial_rollout|config_push|memory_leak|pool_exhaustion|"
+            r"retry_storm|queue_backlog)?$"
+        ),
+    )
     change_id: str = ""
     remediation: str = ""
 
 
 class ResolveArgs(Args):
     report: Report = Field(default_factory=Report)
+
+
+class IncidentResolveArgs(Args):
+    reports: list[Report] = Field(default_factory=lambda: list[Report](), max_length=8)
 
 
 TOOLS = [
@@ -165,7 +162,7 @@ class OncallTask(Task):
         if world is None or self.done():
             return ToolResult(ok=False, error="Episode unavailable or finished")
         state.calls += 1
-        args = validate_call(tool_map(TOOLS), call)
+        args = validate_call(tool_map(self.tools()), call)
         if isinstance(args, ToolResult):
             return args
         observed_at = state.minute
@@ -210,6 +207,11 @@ class OncallTask(Task):
                 content = {"waited": args.minutes}
             elif isinstance(args, ResolveArgs):
                 state.report = args.report.model_dump()
+                duration = 0
+                content = {"message": "incident closed"}
+            elif isinstance(args, IncidentResolveArgs):
+                state.incident_reports = [report.model_dump() for report in args.reports]
+                state.report = {}
                 duration = 0
                 content = {"message": "incident closed"}
             else:

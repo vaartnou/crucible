@@ -120,7 +120,9 @@ export const ClusterGraph: React.FC<ClusterGraphProps> = ({
 
     const { coords, width, height } = layoutCluster(rawServices);
 
-    const culprit = usingGod && revealSecret ? godState?.secret?.culprit : null;
+    const culprits = new Set(usingGod && revealSecret
+      ? godState?.secret?.incidents?.map((i) => i.service) ?? [godState?.secret?.culprit]
+      : []);
     const fogPodsMap = new Map<string, typeof fogState.pods>();
     for (const p of fogState.pods) {
       const arr = fogPodsMap.get(p.service) ?? [];
@@ -149,7 +151,7 @@ export const ClusterGraph: React.FC<ClusterGraphProps> = ({
             error: p.error_ratio,
             version: p.version,
           })),
-          isRootCause: culprit === s.name,
+          isRootCause: culprits.has(s.name),
         };
       }
       const fm = s.fog?.metrics ?? {};
@@ -264,7 +266,9 @@ export const ClusterGraph: React.FC<ClusterGraphProps> = ({
           )}
           {usingGod && revealSecret && godState?.secret && (
             <span className="badge badge-err">
-              ROOT CAUSE: {godState.secret.culprit} / {godState.secret.fault} ({godState.secret.change_id})
+              {godState.secret.incidents
+                ? `ROOT CAUSES: ${godState.secret.incidents.map((i) => `${i.service} / ${i.fault_kind} (${i.change_id})`).join(' · ')}`
+                : `ROOT CAUSE: ${godState.secret.culprit} / ${godState.secret.fault} (${godState.secret.change_id})`}
             </span>
           )}
         </div>

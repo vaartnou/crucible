@@ -37,6 +37,12 @@ class Base:
         self.summary = ""
         self.fault = ""
         self.report: dict[str, JsonValue] = {}
+        self.overlap = task_spec.version >= 2
+
+    def close(self, report: dict[str, JsonValue]) -> ToolCall:
+        return ToolCall(
+            name="resolve", args={"reports": [report]} if self.overlap else {"report": report}
+        )
 
 
 def _number(row: dict[str, JsonValue], key: str, default: float = 0) -> float:
@@ -74,6 +80,8 @@ class GraphWalk(Base):
         self.pod_memories: list[float] = []
         self.target_queue: float = 0.0
         self.pending_services: list[str] = []
+        self.incident_reports: dict[str, dict[str, JsonValue]] = {}
+        self.pending_report: dict[str, JsonValue] | None = None
 
     def _choose_target(self) -> None:
         unhealthy = {
@@ -259,7 +267,7 @@ class GraphWalk(Base):
             candidates = relevant
         # Prefer a change at or before the observed onset; never blindly undo the newest decoy.
         prior = [c for c in candidates if _number(c, "minute") <= self.onset]
-        candidates = prior or candidates
+        candidates = candidates if self.overlap and not config else (prior or candidates)
         if not candidates:
             return ToolCall(name="resolve", args={"report": {}})
         change = max(candidates, key=lambda c: _number(c, "minute"))
@@ -278,6 +286,21 @@ class GraphWalk(Base):
         )
 
     async def act(self, obs: Observation) -> ToolCall | None:
+        if self.pending_report is not None:
+            if obs.last_result is not None and obs.last_result.ok:
+                self.incident_reports[str(self.pending_report["change_id"])] = self.pending_report
+            self.pending_report = None
+        call = await self._act(obs)
+        if not self.overlap or call is None:
+            return call
+        if call.name == "resolve":
+            return ToolCall(name="resolve", args={"reports": list(self.incident_reports.values())})
+        command = str(call.args.get("command", ""))
+        if command.startswith(("config revert ", "kubectl rollout undo ")) and self.report:
+            self.pending_report = dict(self.report)
+        return call
+
+    async def _act(self, obs: Observation) -> ToolCall | None:
         stage = self.stage
         self.stage += 1
         rows = _rows(obs)
@@ -501,6 +524,65 @@ class Reference(GraphWalk):
     extra_verification = True
 
 
+@register_policy("incident_runbook", "oncall")
+class IncidentRunbook(Reference):
+    """Check developing memory regressions before following currently failing dependencies."""
+
+    name = "incident_runbook"
+
+    async def reset(self, task_spec: TaskSpec, tools: list[ToolSpec], instruction: str) -> None:
+        await super().reset(task_spec, tools, instruction)
+        self.preflight = 0
+        self.preflight_target = ""
+        self.preflight_report: dict[str, JsonValue] = {}
+
+    async def act(self, obs: Observation) -> ToolCall | None:
+        if self.preflight == 0:
+            self.preflight = 1
+            return ToolCall(
+                name="query_metrics",
+                args={"metric": "memory", "service": "*", "window": 10, "series": True},
+            )
+        if self.preflight == 1:
+            series: dict[str, list[float]] = {}
+            for row in _rows(obs):
+                series.setdefault(str(row["name"]), []).append(_number(row, "value"))
+            growing = {
+                name: values[-1] - values[0]
+                for name, values in series.items()
+                if len(values) >= 3 and values[-1] > values[0] + 20
+            }
+            if growing:
+                self.preflight_target = max(growing, key=lambda name: growing[name])
+                self.preflight = 2
+                return _run(f"kubectl rollout history deploy/{self.preflight_target}")
+            self.preflight = 4
+        if self.preflight == 2:
+            deployments = _rows(obs)
+            if deployments:
+                change = max(deployments, key=lambda row: _number(row, "minute"))
+                self.preflight_report = {
+                    "service": self.preflight_target,
+                    "fault_kind": "memory_leak",
+                    "change_id": str(change["id"]),
+                    "remediation": "rollback",
+                }
+                self.preflight = 3
+                return _run(
+                    f"kubectl rollout undo deploy/{self.preflight_target} "
+                    f"--to-revision={change['id']}"
+                )
+            self.preflight = 4
+        if self.preflight == 3:
+            if obs.last_result is not None and obs.last_result.ok:
+                self.incident_reports[str(self.preflight_report["change_id"])] = dict(
+                    self.preflight_report
+                )
+                self.report = dict(self.preflight_report)
+            self.preflight = 4
+        return await super().act(obs)
+
+
 @register_policy("newest_change", "oncall")
 class NewestChange(GraphWalk):
     """Diagnostic baseline: graph traversal, then newest local change without causal matching."""
@@ -553,7 +635,7 @@ class LoudestAlert(Base):
         if stage == 3:
             return _run(f"kubectl rollout undo deploy/{self.target}")
         if stage == 4:
-            return ToolCall(name="resolve", args={"report": {"service": self.target}})
+            return self.close({"service": self.target})
         return None
 
 
@@ -573,7 +655,7 @@ class Sweep(Base):
             operation = self.operations[index % len(self.operations)]
             return _run(f"kubectl rollout {operation} deploy/{service['name']}")
         if index == len(self.services) * len(self.operations):
-            return ToolCall(name="resolve", args={"report": {}})
+            return self.close({})
         return None
 
 
@@ -599,7 +681,4 @@ class GuessReport(Base):
     name = "guess_report"
 
     async def act(self, obs: Observation) -> ToolCall | None:
-        return ToolCall(
-            name="resolve",
-            args={"report": {"service": "edge-gateway", "fault_kind": "partial_rollout"}},
-        )
+        return self.close({"service": "edge-gateway", "fault_kind": "partial_rollout"})

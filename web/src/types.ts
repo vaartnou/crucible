@@ -177,6 +177,7 @@ export interface GodState {
     fault: string;
     change_id: string;
     expected_remediation: string;
+    incidents?: Array<{ service: string; fault_kind: string; change_id: string }>;
   } | null;
 }
 

@@ -560,6 +560,8 @@ def build_god_state(
             "change_id": world.change_id,
             "expected_remediation": expected_rem,
         }
+        if world.incidents:
+            secret["incidents"] = [asdict(incident) for incident in world.incidents]
 
     pending_dict: dict[str, Any] | None = None
     if state.pending_action is not None:
@@ -575,11 +577,14 @@ def build_god_state(
         "calls": state.calls,
         "max_steps": task.spec.max_steps,
         "penalty": round(state.penalty, 4),
-        "repaired": state.repaired,
+        "repaired": all(i.change_id in state.reverted_changes for i in world.incidents)
+        if world.incidents
+        else state.repaired,
         "stampede_until": state.stampede_until if state.stampede_until >= 0 else None,
         "pending_action": pending_dict,
         "reverted_changes": sorted(state.reverted_changes),
         "report": dict(state.report) if state.report is not None else None,
+        "incident_reports": state.incident_reports,
         "services": services_out,
         "edges": edges_out,
         "alerts": alerts_out,

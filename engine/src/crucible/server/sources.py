@@ -16,6 +16,7 @@ from crucible.core.registry import get_policy, get_task
 from crucible.core.scoring import Score
 from crucible.core.tools import Observation, result_text
 from crucible.core.transcript import Footer, Header, StepRecord
+from crucible.feedback.observations import MAX_NUMERIC_TOLERANCE, observations_match
 from crucible.server.inspector import build_fog_state, build_god_state
 
 _HEADER_ADAPTER = TypeAdapter(Header)
@@ -425,7 +426,7 @@ async def replay_parsed_transcript(
                     diverged = True
                     break
                 res = await task.step(rec.call)
-                if res != rec.result:
+                if not observations_match(res, rec.result, MAX_NUMERIC_TOLERANCE):
                     diverged = True
                     break
             if not diverged:
@@ -455,6 +456,7 @@ async def replay_parsed_transcript(
         "fog_state": fog,
         "god_state": matched_god,
         "salt_status": salt_status,
+        "numeric_tolerance": MAX_NUMERIC_TOLERANCE,
         "has_matched_world": matched_god is not None,
         "agent_logs": parsed.agent_logs,
         "agent_label": parsed.agent_label,
@@ -482,6 +484,19 @@ async def load_and_replay_file(
     )
     payload.pop("_matched_salt", None)
     return payload
+
+
+async def comparison_world_from_file(
+    path: Path, *, extra_dirs: Sequence[Path]
+) -> tuple[str, int, int, str | None]:
+    """Resolve a comparison world only after matching every saved observation."""
+    parsed = await asyncio.to_thread(_load_parsed_sync, path)
+    payload = await replay_parsed_transcript(parsed, extra_dirs=extra_dirs)
+    if not payload["has_matched_world"]:
+        raise ValueError("Cannot compare: saved observations do not match an available world")
+    god = payload["god_state"]
+    difficulty = 1 if len(god["services"]) <= 8 else 0
+    return parsed.header.task, parsed.header.seed, difficulty, payload["_matched_salt"]
 
 
 async def _run_cmd(args: list[str], limit_sec: float = 5.0) -> tuple[int, str, str]:

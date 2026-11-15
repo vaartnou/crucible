@@ -83,6 +83,7 @@ class State:
     stampede_until: int = -1
     penalty: float = 0
     report: dict[str, str] | None = None
+    incident_reports: list[dict[str, str]] | None = None
     history: list[tuple[PodSample, ...]] = field(
         default_factory=lambda: list[tuple[PodSample, ...]]()
     )

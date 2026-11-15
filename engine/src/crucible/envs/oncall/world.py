@@ -92,6 +92,13 @@ class Build:
 
 
 @dataclass(frozen=True)
+class Incident:
+    service: str
+    fault_kind: str
+    change_id: str
+
+
+@dataclass(frozen=True)
 class World:
     services: tuple[Service, ...]
     changes: tuple[Change, ...]
@@ -102,6 +109,7 @@ class World:
     edges: tuple[Edge, ...] = ()
     entry_rate: float = 180
     builds: tuple[Build, ...] = ()
+    incidents: tuple[Incident, ...] = ()
 
 
 def kind_of(name: str, services_map: dict[str, Service]) -> str:

@@ -371,6 +371,10 @@ def regrade_command(
         str | None, typer.Option(help="Environment variable holding world salt.")
     ] = None,
     out: Annotated[Path | None, typer.Option(help="Write replay report here.")] = None,
+    numeric_tolerance: Annotated[
+        float,
+        typer.Option(min=0, max=1e-12, help="Explicit float roundoff tolerance; default exact."),
+    ] = 0,
 ) -> None:
     """Replay old actions with current scoring; flag changed observations."""
     import os
@@ -381,7 +385,9 @@ def regrade_command(
     if salt_env and not salt:
         _fail(f"Missing environment variable {salt_env}")
     try:
-        rows = asyncio.run(regrade_folder(folder, export=export, salt=salt))
+        rows = asyncio.run(
+            regrade_folder(folder, export=export, salt=salt, numeric_tolerance=numeric_tolerance)
+        )
     except (ValueError, OSError) as exc:
         _fail(str(exc))
     report = json.dumps(rows, indent=2) + "\n"

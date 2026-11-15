@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 import shutil
 import subprocess
 import tomllib
@@ -39,10 +40,9 @@ def _read_json(path: Path) -> dict[str, Any]:
 
 def _oncall_task(path: Path) -> bool:
     try:
-        return (
-            tomllib.loads((path / "task.toml").read_text()).get("metadata", {}).get("task_ref")
-            == "oncall@1"
-        )
+        return tomllib.loads((path / "task.toml").read_text()).get("metadata", {}).get(
+            "task_ref"
+        ) in {"oncall@1", "oncall@2"}
     except OSError, ValueError:
         return False
 
@@ -195,8 +195,15 @@ class HarborJobs:
                 "--n-concurrent",
                 str(req.concurrency),
             ]
-            if self.api_key_name:
-                command.extend(["--api-key-name", self.api_key_name])
+            api_key_name = self.api_key_name
+            if (
+                not api_key_name
+                and req.model.startswith("google/")
+                and os.environ.get("GOOGLE_GENERATIVE_AI_API_KEY")
+            ):
+                api_key_name = "GOOGLE_GENERATIVE_AI_API_KEY"
+            if api_key_name:
+                command.extend(["--api-key-name", api_key_name])
             # Credentials are inherited from the server environment, never placed in arguments.
             try:
                 with (folder / "launcher.log").open("wb") as log:

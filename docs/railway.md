@@ -1,6 +1,6 @@
 # Railway deployment
 
-Deploy the `oncall@1` incident-response demo as one service. The image sets
+Deploy the incident-response demo (`oncall@1` and `oncall@2`) as one service. The image sets
 `CRUCIBLE_ENVIRONMENTS=oncall` so the registry exposes only this environment, while normal
 local installs continue to load both oncall and SupplyGym. The root `Dockerfile` builds its
 React UI and Python engine, and FastAPI serves both from the same origin. The engine-only
@@ -61,7 +61,7 @@ docker build -t crucible-demo .
 docker run --rm -p 8000:8000 crucible-demo
 ```
 
-Open `http://localhost:8000/`. `/healthz` should return `ok`, `/ui/meta` should list `oncall@1`,
+Open `http://localhost:8000/`. `/healthz` should return `ok`, `/ui/meta` should list both oncall versions,
 and creating a human session should work without an API key.
 
 If Railway reports `No start command detected`, it is still using Railpack instead of the

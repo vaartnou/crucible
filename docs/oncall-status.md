@@ -1,5 +1,11 @@
 # Oncall implementation and feedback loop
 
+The new experimental `oncall@2` adds overlapping regressions and a public-tool runbook workflow.
+See [scenario design, measurement scope and demo instructions](oncall-overlap.md). The original
+single-fault results below describe `oncall@1` and must not be carried over to the new task.
+The [completed four-model comparison](oncall-model-comparison.md) shows a large gap against
+Flash-Lite, while Pro's recovery impact remains competitive with the runbook.
+
 Status: experimental, 2026-11-15. **The hard-eval claim has not passed.** The [causal-model iteration](oncall-iteration-2.md) is implemented and measured: paired Flash 0.8583 versus graph walk 0.8817 (gap 0.0234; 1/10 seeds at the target gap).
 
 The implementation replaces the old environments with `oncall@1`, preserves guess as a test fixture, and adds Harbor export, replay, and bot gate commands. Direct model screening was used for the historical measurements and has since been removed. The original proposal is preserved in [oncall-proposal.md](plans/oncall-proposal.md).
