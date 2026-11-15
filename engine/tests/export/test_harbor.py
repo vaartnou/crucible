@@ -2,6 +2,7 @@
 
 import itertools
 import json
+import sys
 import tomllib
 from pathlib import Path
 
@@ -91,7 +92,9 @@ def test_layout(tmp_path: Path, artifacts: EngineArtifacts) -> None:
     for folder in folders:
         assert _files(folder) == FILES
         for script in ("solution/solve.sh", "tests/test.sh"):
-            assert (folder / script).stat().st_mode & 0o111
+            if sys.platform != "win32":
+                assert (folder / script).stat().st_mode & 0o111
+            assert b"\r" not in (folder / script).read_bytes()
         assert "@@" not in "".join(
             (folder / f).read_text() for f in FILES if not f.endswith(".whl")
         )

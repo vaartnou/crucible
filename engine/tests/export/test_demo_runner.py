@@ -19,6 +19,7 @@ def test_concurrency_does_not_limit_dataset(tmp_path: Path) -> None:
     assert command[command.index("-n") + 1] == "1"
     assert "-l" not in command
     assert "TEST_KEY" in command
+    assert command[command.index("--ae") + 1] == "TEST_KEY=${TEST_KEY}"
     assert "secret" not in command
 
 
@@ -33,5 +34,16 @@ def test_spectator_mount_is_sidecar_only(tmp_path: Path) -> None:
     assert "volumes" not in config["services"]["main"]
     sidecar = config["services"]["mcp-server"]
     assert sidecar["volumes"][0]["source"] == events.resolve().as_posix()
+    assert sidecar["volumes"][0]["target"] == "/app/spectator-events.jsonl"
+    assert sidecar["environment"]["SPECTATOR_PATH"] == "/app/spectator-events.jsonl"
     assert sidecar["environment"]["SPECTATOR_RUN_ID"] == "unique-run"
     assert events.is_file()
+
+
+def test_dotenv_reader_and_baseline_set(tmp_path: Path) -> None:
+    dotenv = tmp_path / ".env"
+    dotenv.write_text('# comment\nexport ANTHROPIC_API_KEY="sk-test-value"\n', encoding="utf-8")
+    assert runner.read_dotenv_key("ANTHROPIC_API_KEY", [dotenv]) == "sk-test-value"
+    assert runner.read_dotenv_key("MISSING_KEY", [dotenv]) == ""
+    for expected in ("reference", "fill_adjusted_base_stock", "ss", "stop_early", "do_nothing"):
+        assert expected in runner.BASELINES

@@ -72,3 +72,26 @@ async def test_v3_final_records_actual_scorer_and_bound(tmp_path: Path) -> None:
         == score.breakdown["surplus_upper_bound"]
     )
     assert event["simulator_version"]["implementation_sha256"]
+
+
+async def test_simulator_version_normalizes_crlf(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import crucible.server.spectator as spectator_mod
+
+    task = get_task("supplygym-cala@3")
+    await task.reset(5, salt="secret")
+    lf_root = tmp_path / "lf" / "envs" / "supplygym"
+    crlf_root = tmp_path / "crlf" / "envs" / "supplygym"
+    lf_root.mkdir(parents=True)
+    crlf_root.mkdir(parents=True)
+    for name in ("sim.py", "cala_sim.py", "play.py", "state.py"):
+        (lf_root / name).write_bytes(f"# {name}\nx = 1\n".encode())
+        (crlf_root / name).write_bytes(f"# {name}\r\nx = 1\r\n".encode())
+    monkeypatch.setattr(spectator_mod, "__file__", str(tmp_path / "lf" / "server" / "spectator.py"))
+    lf_feed = Spectator(tmp_path / "lf.jsonl", task, 5, "secret")
+    monkeypatch.setattr(
+        spectator_mod, "__file__", str(tmp_path / "crlf" / "server" / "spectator.py")
+    )
+    crlf_feed = Spectator(tmp_path / "crlf.jsonl", task, 5, "secret")
+    assert lf_feed.metadata["simulator_version"] == crlf_feed.metadata["simulator_version"]
