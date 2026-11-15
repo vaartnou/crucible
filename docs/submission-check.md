@@ -1,5 +1,23 @@
 # AfterQuery submission check
 
+## Current separate-verifier package
+
+The current [submission](../submissions/oncall-v2/README.md) is
+`oncall-v2-separate-7b0512f.tar.gz`, frozen from the committed separate-verifier
+implementation. Full default Harbor lint passes without exceptions. A fresh
+Gemini Flash/OpenCode run scores `0.644313711357698`, with correct diagnoses,
+verified recovery, 60 calls, and zero Harbor exceptions. Native Harbor regrading
+against the exact frozen verifier reproduces that score. The evidence is in
+`submission-evidence-separate.zip`; [verification details](harbor-separate-verifier.md)
+cover collection, isolation checks, and error handling.
+
+The root README explains the task, difficulty, scoring, project setup, bot
+evaluations, workbench, Harbor model runs, and development checks. Both task
+archives intentionally publish their demo credentials and world salt; provider
+API credentials are excluded. Use a fresh private export for held-out evaluation.
+
+## Historical shared-verifier package
+
 Checked on 15 November 2026 against main at `011cfa1` (PR #56).
 
 The submission environment is `oncall@2`: diagnose and repair overlapping service
