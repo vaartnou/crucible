@@ -56,6 +56,7 @@ class HarborJobs:
         ]
         self.max_concurrency = settings.harbor_max_concurrency
         self.daily_job_limit = settings.harbor_daily_job_limit
+        self.api_key_name = settings.harbor_api_key_name
         self.processes: dict[str, subprocess.Popen[bytes]] = {}
         self.lock = asyncio.Lock()
 
@@ -194,6 +195,8 @@ class HarborJobs:
                 "--n-concurrent",
                 str(req.concurrency),
             ]
+            if self.api_key_name:
+                command.extend(["--api-key-name", self.api_key_name])
             # Credentials are inherited from the server environment, never placed in arguments.
             try:
                 with (folder / "launcher.log").open("wb") as log:

@@ -33,6 +33,7 @@ case "${1:-}" in
     export HARBOR_WORKER_MODE=true
     export HARBOR_MAX_CONCURRENCY="${HARBOR_MAX_CONCURRENCY:-1}"
     export HARBOR_DAILY_JOB_LIMIT="${HARBOR_DAILY_JOB_LIMIT:-10}"
+    export HARBOR_API_KEY_NAME="${HARBOR_API_KEY_NAME:-GOOGLE_GENERATIVE_AI_API_KEY}"
     export MODE=api
     unset HARBOR_WORKER_URL
     exec uv run --directory engine uvicorn --factory crucible.server.app:create_app \

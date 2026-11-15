@@ -33,7 +33,12 @@ async def test_launch_uses_harbor_opencode_docker_and_durable_output(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     prepare_export(tmp_path / "exports")
-    settings = Settings(harbor_jobs_dir=tmp_path / "jobs", harbor_exports_dir=tmp_path / "exports")
+    settings = Settings(
+        harbor_jobs_dir=tmp_path / "jobs",
+        harbor_exports_dir=tmp_path / "exports",
+        harbor_api_key_name="GOOGLE_GENERATIVE_AI_API_KEY",
+    )
+    monkeypatch.setenv("GOOGLE_GENERATIVE_AI_API_KEY", "secret-test-key-value")
     jobs = HarborJobs(settings)
     monkeypatch.setattr(
         "crucible.server.harbor_jobs.shutil.which", Mock(return_value="/bin/harbor")
@@ -55,9 +60,11 @@ async def test_launch_uses_harbor_opencode_docker_and_durable_output(
         ("--model", "google/gemini-3.8-flash"),
         ("--jobs-dir", str(settings.harbor_jobs_dir)),
         ("--job-name", row["id"]),
+        ("--api-key-name", "GOOGLE_GENERATIVE_AI_API_KEY"),
     ]:
         assert command[command.index(flag) + 1] == value
     assert "--base-url" not in command
+    assert "secret-test-key-value" not in command
     with pytest.raises(HTTPException) as duplicate:
         await jobs.launch(LaunchHarborRequest(export="oncall-export"))
     assert duplicate.value.status_code == 409
