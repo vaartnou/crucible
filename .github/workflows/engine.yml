@@ -32,7 +32,9 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - run: npm ci
       - run: npm test
-      - run: node --test ../spectator/supplygym/*.test.mjs
+      - name: Test SupplyGym spectator
+        if: ${{ hashFiles('spectator/supplygym/feed.test.mjs') != '' }}
+        run: node --test ../spectator/supplygym/feed.test.mjs ../spectator/supplygym/live.test.mjs
       - run: npm run build
 
   check:

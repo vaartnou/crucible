@@ -178,9 +178,19 @@ class SimulationIntegrationTests(unittest.TestCase):
             - sum(ledger[k] for k in ("purchase", "holding", "stockout", "expedite", "switching")),
         )
         self.assertAlmostEqual(
-            final["score"]["total"],
-            max(0, min(1, ledger["operating_surplus"] / ledger["surplus_upper_bound"])),
+            ledger["adjusted_surplus"],
+            ledger["operating_surplus"]
+            + ledger["terminal_inventory_credit"]
+            - ledger["service_charge"]
+            - ledger["continuity_charge"],
         )
+        floor, bound = ledger["surplus_floor"], ledger["surplus_upper_bound"]
+        expected = (
+            max(0, min(1, (ledger["adjusted_surplus"] - floor) / (bound - floor)))
+            if bound > floor
+            else 0
+        )
+        self.assertAlmostEqual(final["score"]["total"], expected)
 
         previous_id = run["id"]
         second = server.start()
