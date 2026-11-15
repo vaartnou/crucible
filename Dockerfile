@@ -25,7 +25,10 @@ COPY --from=web-builder /web/dist /app/web/dist
 ENV PATH=/app/.venv/bin:$PATH \
     PORT=8000 \
     MODE=api \
+    CRUCIBLE_ENVIRONMENTS=oncall \
     RUNS_DIR=/tmp/runs \
+    HARBOR_JOBS_DIR=/tmp/runs/harbor-jobs \
+    HARBOR_EXPORTS_DIR=/tmp/runs \
     PYTHONUNBUFFERED=1 \
     CRUCIBLE_GIT_COMMIT=${CRUCIBLE_GIT_COMMIT}
 USER crucible

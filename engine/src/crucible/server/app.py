@@ -6,7 +6,7 @@ import hmac
 import logging
 from collections.abc import AsyncGenerator
 from pathlib import Path
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 from uuid import uuid4
 
 from fastapi import FastAPI, Header, HTTPException
@@ -25,9 +25,11 @@ from crucible.core.transcript import StopReason, TranscriptWriter, read_transcri
 from crucible.server.logging import configure_logging
 from crucible.server.mcp import build_mcp_server
 from crucible.server.settings import Settings
-from crucible.server.spectator import Spectator
 from crucible.server.store import Entry, InMemorySessionStore, SessionStore
 from crucible.server.workbench import WorkbenchManager, add_workbench_routes
+
+if TYPE_CHECKING:
+    from crucible.server.spectator import Spectator
 
 
 class ToolInfo(BaseModel):
@@ -158,8 +160,11 @@ def _add_sidecar_routes(app: FastAPI, settings: Settings, logger: logging.Logger
     path = settings.runs_dir / "episodes" / f"sidecar-{task.spec.ref}-{seed}.jsonl"
     session = EpisodeSession(task, seed, TranscriptWriter(path), salt=settings.sidecar_salt)
     lock = asyncio.Lock()
-    spectator = (
-        Spectator(
+    spectator: Spectator | None = None
+    if settings.spectator_path:
+        from crucible.server.spectator import Spectator
+
+        spectator = Spectator(
             settings.spectator_path,
             task,
             seed,
@@ -167,9 +172,6 @@ def _add_sidecar_routes(app: FastAPI, settings: Settings, logger: logging.Logger
             settings.spectator_run_id,
             settings.spectator_strategy,
         )
-        if settings.spectator_path
-        else None
-    )
     app.state.spectator = spectator
     manager = StreamableHTTPSessionManager(
         build_mcp_server(session, lock, spectator), json_response=True, stateless=True

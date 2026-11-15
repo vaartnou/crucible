@@ -70,7 +70,8 @@ class _Specific(_BasePolicy):
 
 
 @pytest.fixture(autouse=True)
-def isolated() -> Generator[None]:
+def isolated(monkeypatch: pytest.MonkeyPatch) -> Generator[None]:
+    monkeypatch.delenv("CRUCIBLE_ENVIRONMENTS", raising=False)
     with registry._reset_for_tests():  # pyright: ignore[reportPrivateUsage]
         yield
 
@@ -216,6 +217,37 @@ def test_broken_plugin_names_the_entry_point(monkeypatch: pytest.MonkeyPatch) ->
     with pytest.raises(registry.EnvLoadError, match=r"'broken'.*no_such_module_for_crucible"):
         list_tasks()
     assert registry._loaded is False  # pyright: ignore[reportPrivateUsage]
+
+
+def test_environment_selection_skips_other_plugins(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _SelectedEntryPoint(EntryPoint):
+        def load(self) -> object:
+            register_task(_make_task("selected", 1))
+            return None
+
+    _fake_entry_points(
+        monkeypatch,
+        _SelectedEntryPoint("selected", "plugin_pkg.selected", registry.ENTRY_POINT_GROUP),
+        EntryPoint("excluded", "no_such_module_for_crucible", registry.ENTRY_POINT_GROUP),
+    )
+    monkeypatch.setenv("CRUCIBLE_ENVIRONMENTS", " selected ")
+    assert registry.list_envs() == [("selected", "plugin_pkg.selected")]
+    assert list_tasks() == ["selected@1"]
+    with pytest.raises(UnknownTaskError):
+        get_task("excluded@1")
+
+
+@pytest.mark.parametrize("configured", ["", " , ", "missing", "oncall,missing"])
+def test_invalid_environment_selection_fails(
+    monkeypatch: pytest.MonkeyPatch, configured: str
+) -> None:
+    _fake_entry_points(
+        monkeypatch,
+        EntryPoint("oncall", "crucible.envs.oncall", registry.ENTRY_POINT_GROUP),
+    )
+    monkeypatch.setenv("CRUCIBLE_ENVIRONMENTS", configured)
+    with pytest.raises(registry.EnvLoadError, match="CRUCIBLE_ENVIRONMENTS"):
+        list_tasks()
 
 
 def test_state_restored_after_reset_context() -> None:
