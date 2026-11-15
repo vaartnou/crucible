@@ -327,6 +327,25 @@ def serve_command() -> None:
     )
 
 
+@app.command("ui")
+def ui_command(
+    port: Annotated[int, typer.Option(help="Port for the workbench server.")] = 8000,
+    host: Annotated[str, typer.Option(help="Host interface to bind.")] = "127.0.0.1",
+    runs_dir: Annotated[Path, typer.Option(help="Directory for workbench episodes.")] = Path(
+        "runs/server"
+    ),
+) -> None:
+    """Serve the Oncall Workbench API and built web UI."""
+    import uvicorn
+
+    from crucible.server.app import create_app
+    from crucible.server.settings import Settings
+
+    settings = Settings(mode="api", port=port, runs_dir=runs_dir)
+    typer.echo(f"Crucible Oncall Workbench -> http://{host}:{port}")
+    uvicorn.run(create_app(settings), host=host, port=port, log_level=settings.log_level)
+
+
 __all__ = ["Row", "app", "summarise"]
 
 

@@ -26,6 +26,7 @@ from crucible.server.logging import configure_logging
 from crucible.server.mcp import build_mcp_server
 from crucible.server.settings import Settings
 from crucible.server.store import Entry, InMemorySessionStore, SessionStore
+from crucible.server.workbench import WorkbenchManager, add_workbench_routes
 
 
 class ToolInfo(BaseModel):
@@ -248,6 +249,8 @@ def create_app(settings: Settings | None = None, store: SessionStore | None = No
                 sweeper.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await sweeper
+                if workbench is not None:
+                    await workbench.aclose()
                 await sessions.aclose()
             return
         session: EpisodeSession = app.state.sidecar_session
@@ -281,11 +284,13 @@ def create_app(settings: Settings | None = None, store: SessionStore | None = No
     async def healthz() -> str:  # pyright: ignore[reportUnusedFunction]
         return "ok"
 
+    workbench: WorkbenchManager | None = None
     if settings.mode == "sidecar":
         _add_sidecar_routes(app, settings, logger)
     else:
         sessions: SessionStore = store or InMemorySessionStore(settings.session_ttl_seconds)
         _add_api_routes(app, settings, sessions, logger)
+        workbench = add_workbench_routes(app, settings)
     return app
 
 
