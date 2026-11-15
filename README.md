@@ -19,6 +19,10 @@ The web UI uses Harbor + OpenCode for model evaluations. Watch launches Docker t
 Runs reads their saved transcripts from a configured Harbor jobs directory. See
 [UI setup](docs/using-environments.md#ui-and-saved-evaluations).
 
+The [SupplyGym simulator](spectator/supplygym/README.md) accepts procurement inputs,
+runs a year locally, and compares your strategy with four matched baselines. Start it
+with `uv run --project engine python spectator/supplygym/serve.py`.
+
 ## Deploy the demo
 
 See [Railway deployment](docs/railway.md) for the combined UI/API image and service settings.

@@ -5,7 +5,7 @@
   <meta content="width=device-width, initial-scale=1" name="viewport"/>
   <meta content="#101d1a" name="theme-color"/>
   <title>
-   SupplyGym spectator
+   SupplyGym simulator
   </title>
   <link href="./style.css" rel="stylesheet"/>
  </head>
@@ -20,7 +20,7 @@
       SUPPLYGYM
      </b>
      <small>
-      SPECTATOR
+      SIMULATOR
      </small>
     </span>
    </div>
@@ -68,6 +68,22 @@
       completed weeks
      </span>
     </div>
+   </section>
+   <section class="panel simulator" aria-labelledby="sim-title">
+    <div class="section-head compact"><div><div class="section-index">INTERACTIVE SIMULATION</div><h2 id="sim-title">Set your strategy<span class="period">.</span></h2><p>Run a deterministic scenario with your controls. No paid model is required.</p></div><span class="tag" id="sim-status">CHECKING SERVER</span></div>
+    <p class="sim-message" id="sim-message" role="status" aria-live="polite">Checking simulation availability…</p>
+    <form id="sim-form">
+     <div class="control-grid">
+      <label>Scenario seed<input id="sim-seed" type="number" min="0" max="2147483647" step="1" value="42" required></label>
+      <label>Replenishment rule<select id="sim-replenishment"><option value="ss">Default (s, S)</option><option value="base_stock">Daily base-stock</option><option value="fixed_lot">Fixed lot</option><option value="fill_adjusted_base_stock">Fill-adjusted base-stock</option></select></label>
+      <label>Safety stock <small>days · 0–3</small><input id="sim-safety" type="number" min="0" max="3" step="0.01" value="0" required></label>
+      <label>Order multiplier <small>0.607–1.649</small><input id="sim-multiplier" type="number" min="0.6065306597126334" max="1.6487212707001282" step="any" value="1" required></label>
+      <label>Expedite share <small>% · 0–30</small><input id="sim-expedite" type="number" min="0" max="30" step="0.1" value="0" required></label>
+     </div>
+     <details class="advanced"><summary>Advanced supplier controls</summary><p>Set individual multipliers (0.0184–54.598); leave blank to keep current weights. Alternative approval is a one-time action.</p><div id="sim-weights" class="control-grid weights"></div><label>Approve alternative<select id="sim-approve"><option value="">None</option><option value="A01">A01</option><option value="A02">A02</option></select></label></details>
+     <div class="sim-actions"><button class="button button-dark" id="sim-create" type="submit">Create simulation</button><button class="button button-dark" id="sim-step" type="button">Apply &amp; advance one week</button><button class="button button-light" id="sim-run" type="button">Run remaining year</button><button class="button button-outline" id="sim-pause" type="button">Pause simulation</button><button class="button button-outline" id="sim-cancel" type="button">Cancel run</button><button class="text-button" id="sim-reset" type="button">New / reset ↗</button></div>
+    </form>
+    <div class="sim-observation"><div class="section-index">CURRENT PUBLIC OBSERVATION</div><div class="empty-copy" id="sim-observation">Create a simulation to see the current decision point before advancing.</div></div>
    </section>
    <section aria-label="Data source" class="toolbar panel">
     <div class="source-copy">
@@ -210,7 +226,7 @@
         </span>
        </h2>
        <p>
-        What the AI knew before acting.
+        What the strategy knew before acting.
        </p>
       </div>
       <span class="tag" id="decision-week">

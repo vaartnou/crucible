@@ -12,14 +12,14 @@ const money = n => n != null && Number.isFinite(Number(n)) ? new Intl.NumberForm
 const colors = {
   ss:'#f3a873',base_stock:'#83c8d0',fixed_lot:'#c5a9e4',fill_adjusted_base_stock:'#e4d17e'
 };
-const strategyName = (name, primary) => name === primary ? 'AI' : ( {
+const strategyName = (name, primary) => name === primary ? (name === 'manual' ? 'Your strategy' : 'AI') : ( {
   ss:'Default (s, S)',base_stock:'Daily base-stock',fixed_lot:'Fixed lot',fill_adjusted_base_stock:'Fill-adjusted base-stock'
 }[name] || label(name));
 const color = (name, primary) => name === primary ? '#c7f36b' : (colors[name] || '#a5b8a7');
 const sourceLabel = state => state.connected ? 'LIVE' : state.source === 'Scripted replay' ? 'SCRIPTED' : 'REPLAY';
 const metric = (name, content) => `<div class="detail-item"><span>${esc(name)}</span><strong>${esc(content)}</strong></div>`;
 const raw = (title, data) => `<details class="raw-details"><summary>${esc(title)}</summary><pre>${esc(JSON.stringify(data,null,2))}</pre></details>`;
-function observationView(observation = {}) {
+export function observationView(observation = {}) {
   const suppliers = Array.isArray(observation.suppliers) ? observation.suppliers : [];
   const pending = suppliers.reduce((sum, s) => sum + (Number(s.pending_units) || 0), 0);
   const lateCount = suppliers.reduce((sum, supplier) => sum + (Number(supplier.late_orders) || 0), 0);
