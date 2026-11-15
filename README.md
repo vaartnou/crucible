@@ -14,11 +14,17 @@ matches reports to both causes. The Harbor verifier writes the single score to
 `/logs/verifier/reward.txt`. See the [matched model results](docs/oncall-model-comparison.md)
 and [submission check](docs/submission-check.md) for evidence and packaging instructions.
 
+New Harbor exports grade in a separate container. Harbor stops the agent, collects the
+completed transcript directly from the simulator sidecar, and replays its actions using
+the frozen simulator before writing the reward. Agent-written reward files are ignored.
+See [verification and regrading](docs/harbor-separate-verifier.md) for the flow and checks.
+
 The [AfterQuery submission](submissions/oncall-v2/README.md) includes the frozen Harbor
 task archive, build/run instructions, checksums, and a scored OpenCode playthrough.
 
-The included Gemini Flash run scored **0.71449**, repaired both faults, and diagnosed both
-causes in 54 calls. The public-tool runbook scored **0.90048** on the same world.
+The fresh Gemini Flash run with separate verification scored **0.64431**, repaired both
+faults, and diagnosed both causes in 60 calls. The public-tool runbook scored **0.90048**
+on the same world. The earlier shared-verifier submission remains available for provenance.
 The [broader model comparison](docs/oncall-model-comparison.md) reports forty trials and
 the limits of the difficulty claim: this is a narrow scenario family, not a broad model ranking.
 

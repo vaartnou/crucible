@@ -1,8 +1,8 @@
 """Export a task to Harbor: one task folder per seed.
 
 Each folder holds the agent's container (no engine in it), a simulator sidecar that installs the
-engine from a vendored wheel, a verifier that reads `/grade` with a per-task token, and an oracle
-`solve.sh` that invokes a token-protected in-process policy. See `docs/decisions.md` for why.
+engine from a vendored wheel, trusted sidecar artifact collection, a separate verifier that
+replays the episode, and an oracle `solve.sh` that invokes a token-protected public-tool policy.
 """
 
 import hashlib
@@ -184,9 +184,9 @@ def export_harbor(
     """Write one Harbor task folder per seed under `out`, plus `manifest.json`.
 
     Raise `ExportError` if `out` is not empty and `force` is false. Every task gets its own
-    grade token; the token is written only to `[verifier.env]` and the sidecar's environment.
-    Every task also gets its own world salt, written only to the sidecar's environment, so the
-    world cannot be rebuilt from the seed in the folder name.
+    grade token; the token is written only to the sidecar's environment.
+    Every task also gets its own world salt, shared only by the sidecar and independent
+    verifier, so the agent cannot rebuild the world from the seed in the folder name.
     """
     if not seeds:
         raise ExportError("no seeds given")
@@ -240,7 +240,7 @@ def export_harbor(
             )
             if rel in _EXECUTABLE:
                 target.chmod(0o755)
-        for vendor in ("environment/mcp-server",):
+        for vendor in ("environment/mcp-server", "tests"):
             shutil.copyfile(artifacts.wheel, folder / vendor / artifacts.wheel.name)
             shutil.copyfile(artifacts.requirements, folder / vendor / "requirements.txt")
         folders.append(folder)

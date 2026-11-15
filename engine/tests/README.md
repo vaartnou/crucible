@@ -25,8 +25,10 @@ Environment tests can use `crucible.testing` (`ScriptedPolicy`, `play`); a plugi
 can test itself the same way.
 
 `tests/export/test_harbor.py` checks the Harbor export without Docker: the folder layout, `task.toml`
-and `docker-compose.yaml`, and that each grade token is only in `[verifier.env]` and the
-sidecar's environment. The real Harbor runs are manual; see `docs/harbor-runs.md`.
+and `docker-compose.yaml`, trusted sidecar artifact collection, separate verification,
+and isolation of grade tokens and world salts from the agent container.
+`tests/export/test_verifier.py` exercises replay validation and episode lifecycle cases.
+The real Harbor runs are recorded in `docs/harbor-runs.md`.
 
 ## Generic checks
 

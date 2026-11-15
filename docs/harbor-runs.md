@@ -1,5 +1,13 @@
 # Harbor runs
 
+New exports use Harbor's separate-verifier workflow: after stopping the agent, a
+collection hook finalizes the episode inside `mcp-server`. Harbor transfers that
+sidecar's evidence file into a dedicated `tests/Dockerfile` image. The verifier
+replays calls with the frozen engine and salt, checks exact observations and outcome,
+and writes the recomputed scalar reward. Agent-side reward files are ignored. Missing
+or invalid evidence is a verifier failure with diagnostics, not a valid zero reward.
+Historical results below used shared verification unless explicitly identified otherwise.
+
 The current environment is `oncall@1`. Older incident and fleetbase results remain in git history; they do not establish an oncall difficulty claim.
 
 Export and build one content-addressed sidecar image for the batch:
